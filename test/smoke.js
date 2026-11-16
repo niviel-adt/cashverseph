@@ -96,7 +96,7 @@ function wallet(dashboard, provider) {
   assert.equal((await request('/api/cashiers')).length,1);
   assert.equal((await request('/api/settings')).cashierApprovalRequired,false);
   const managerCookie=cookie;
-
+  cookie=''; // Start a separate cashier browser session.
   await request('/api/login',{username:'CASHIER_TEST',password:'cashier-test-password-123'});
   assert.equal((await request('/api/me')).role,'cashier');
   const cashierCookie=cookie;
@@ -147,6 +147,7 @@ function wallet(dashboard, provider) {
   assert.equal(revoked.loggedIn,false);
   cookie=managerCookie;
   await request('/api/cashiers/'+created.id+'/active',{active:true});
+  cookie=''; // Separate new cashier session keeps manager session active.
   await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
   assert.equal((await request('/api/me')).role,'cashier');
   await request('/api/logout',{});
