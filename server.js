@@ -63,9 +63,10 @@ const isManager=req=>req.session.role==='manager'||req.session.owner===true;
 async function identity(req){
   if(isManager(req))return {role:'manager',name:'Manager',id:null};
   if(req.session.role==='cashier'&&req.session.cashierId){
-    const q=await db.query('SELECT id,username,display_name FROM cashiers WHERE id=$1 AND active=true',
+    const q=await db.query('SELECT id,username,display_name,auth_version FROM cashiers WHERE id=$1 AND active=true',
       [req.session.cashierId]);
-    if(q.rows.length)return {role:'cashier',id:q.rows[0].id,name:q.rows[0].display_name,
+    if(q.rows.length && q.rows[0].auth_version===req.session.cashierAuthVersion)
+      return {role:'cashier',id:q.rows[0].id,name:q.rows[0].display_name,
       username:q.rows[0].username};
   }
   return null;
@@ -87,7 +88,7 @@ app.post('/api/login',async(req,res)=>{
   if(username==='owner'){
     valid=crypto.timingSafeEqual(secureHash(p),secureHash(process.env.OWNER_PASSWORD));
   }else if(/^[a-z][a-z0-9_.-]{2,29}$/.test(username)){
-    const r=await db.query('SELECT id,username,display_name,password_hash,active FROM cashiers WHERE username=$1',[username]);
+    const r=await db.query('SELECT id,username,display_name,password_hash,active,auth_version FROM cashiers WHERE username=$1',[username]);
     if(r.rows.length){
       cashier=r.rows[0];
       valid=cashier.active && await verifyPassword(p,cashier.password_hash);
@@ -101,7 +102,7 @@ app.post('/api/login',async(req,res)=>{
   await new Promise((resolve,reject)=>req.session.regenerate(e=>e?reject(e):resolve()));
   req.session.role=username==='owner'?'manager':'cashier';
   req.session.owner=username==='owner';
-  if(cashier)req.session.cashierId=cashier.id;
+  if(cashier){req.session.cashierId=cashier.id;req.session.cashierAuthVersion=cashier.auth_version;}
   res.json({ok:true,role:req.session.role});
 });
 app.post('/api/logout',(req,res)=>req.session.destroy(()=>{
@@ -137,14 +138,14 @@ app.post('/api/cashiers',managerOnly,async(req,res)=>{
 });
 app.post('/api/cashiers/:id/active',managerOnly,async(req,res)=>{
   if(typeof req.body?.active!=='boolean')throw error('Choose active or inactive.');
-  const q=await db.query('UPDATE cashiers SET active=$1 WHERE id=$2 RETURNING id,username,display_name,active',
+  const q=await db.query('UPDATE cashiers SET active=$1,auth_version=auth_version+1 WHERE id=$2 RETURNING id,username,display_name,active',
     [req.body.active,req.params.id]);
   if(!q.rows.length)throw error('Cashier not found.',404);
   res.json(q.rows[0]);
 });
 app.post('/api/cashiers/:id/password',managerOnly,async(req,res)=>{
   const passwordHash=await makePasswordHash(req.body?.password);
-  const q=await db.query('UPDATE cashiers SET password_hash=$1 WHERE id=$2 RETURNING id',
+  const q=await db.query('UPDATE cashiers SET password_hash=$1,auth_version=auth_version+1 WHERE id=$2 RETURNING id',
     [passwordHash,req.params.id]);
   if(!q.rows.length)throw error('Cashier not found.',404);
   res.json({ok:true});
@@ -352,11 +353,12 @@ async function init(){
   await db.query(
     "CREATE TABLE IF NOT EXISTS cashiers ("+
     "id text PRIMARY KEY, username text NOT NULL UNIQUE, display_name text NOT NULL,"+
-    "password_hash text NOT NULL, active boolean NOT NULL DEFAULT true,"+
+    "password_hash text NOT NULL, active boolean NOT NULL DEFAULT true, auth_version integer NOT NULL DEFAULT 1,"+
     "created_at timestamptz NOT NULL DEFAULT now());"+
     "CREATE TABLE IF NOT EXISTS app_settings ("+
     "key text PRIMARY KEY, cashier_approval_required boolean NOT NULL DEFAULT false);"+
     "INSERT INTO app_settings(key) VALUES('main') ON CONFLICT(key) DO NOTHING;"+
+    "ALTER TABLE cashiers ADD COLUMN IF NOT EXISTS auth_version integer NOT NULL DEFAULT 1;"+
     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_id text;"+
     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_name text NOT NULL DEFAULT 'Manager';"+
     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_role text NOT NULL DEFAULT 'manager';"+
