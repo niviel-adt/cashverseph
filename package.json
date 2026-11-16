@@ -5,7 +5,10 @@
   "description": "GCash/Maya cash-in cash-out ledger for small stores",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "dev": "node --env-file=.env server.js",
+    "test": "node --test test/*.test.js",
+    "check": "node --check server.js && node --check public/app.js && node --check lib/money.js"
   },
   "engines": {
     "node": ">=20"
