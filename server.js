@@ -11,9 +11,12 @@ const {makePasswordHash,verifyPassword} = require('./lib/passwords');
 
 for(const k of ['DATABASE_URL','OWNER_PASSWORD','SESSION_SECRET'])
   if(!process.env[k]) throw Error('Missing environment variable: '+k);
+// A six-digit owner PIN is supported only when the manager explicitly opts in.
+// Prefer a long, unique owner password for public-facing installations.
+const shortOwnerPinAllowed=process.env.OWNER_ALLOW_SHORT_PIN==='true' && /^\d{6}$/.test(process.env.OWNER_PASSWORD);
 if(process.env.NODE_ENV==='production' &&
-  (process.env.OWNER_PASSWORD.length<12 || process.env.SESSION_SECRET.length<32))
-  throw Error('Production requires a 12+ character OWNER_PASSWORD and 32+ character SESSION_SECRET.');
+  ((!shortOwnerPinAllowed && process.env.OWNER_PASSWORD.length<12) || process.env.SESSION_SECRET.length<32))
+  throw Error('Production requires a 12+ character owner password (or explicit 6-digit PIN opt-in) and a 32+ character session secret.');
 
 const db = new Pool({connectionString:process.env.DATABASE_URL,max:10});
 const app = express();
