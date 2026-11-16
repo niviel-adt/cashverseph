@@ -88,7 +88,71 @@ function wallet(dashboard, provider) {
   assert.equal(list.length,4);
   assert.equal(list.find(r=>r.id===failed.id).status,'FAILED');
 
+  // V1.1 manager creates cashier credentials and can control verification approvals.
+  const created=await request('/api/cashiers',{
+    username:'cashier_test',name:'Test Cashier',password:'cashier-test-password-123'
+  });
+  assert.equal(created.active,true);
+  assert.equal((await request('/api/cashiers')).length,1);
+  assert.equal((await request('/api/settings')).cashierApprovalRequired,false);
+  const managerCookie=cookie;
+
+  await request('/api/login',{username:'CASHIER_TEST',password:'cashier-test-password-123'});
+  assert.equal((await request('/api/me')).role,'cashier');
+  const cashierCookie=cookie;
+  const forbidden=async(p,method='GET',body)=>{
+    const res=await fetch(BASE+p,{method,headers:{Cookie:cookie,'Content-Type':'application/json'},
+      body:body===undefined?undefined:JSON.stringify(body)});
+    assert.equal(res.status,403,'Expected forbidden access to '+p);
+  };
+  await forbidden('/api/dashboard');
+  await forbidden('/api/transactions');
+  await forbidden('/api/rates');
+  await forbidden('/api/report?date=2026-11-16');
+  await forbidden('/api/adjustments','POST',{provider:'MAYA',amount:'1000',reason:'No permission'});
+  await forbidden('/api/rates/import','POST',{csv:'cannot import'});
+  await forbidden('/api/cashiers');
+  await forbidden('/api/settings');
+  await forbidden('/api/transactions/'+cashIn.id+'/complete','POST',{verified:true});
+
+  const cashierTransaction=await request('/api/transactions',{
+    provider:'MAYA',type:'CASH_OUT',mode:'DEDUCT',amount:'100',verified:true
+  });
+  assert.equal(cashierTransaction.status,'COMPLETED');
+  cookie=managerCookie;
+  let records=await request('/api/transactions');
+  const cashierRow=records.find(r=>r.id===cashierTransaction.id);
+  assert.equal(cashierRow.created_by_role,'cashier');
+  assert.equal(cashierRow.created_by_name,'Test Cashier');
+  assert.equal(wallet(await request('/api/dashboard'),'MAYA'),10000);
+
+  await request('/api/settings',{cashierApprovalRequired:true});
+  cookie=cashierCookie;
+  const pendingApproval=await request('/api/transactions',{
+    provider:'MAYA',type:'CASH_OUT',mode:'DEDUCT',amount:'100',verified:true
+  });
+  assert.equal(pendingApproval.status,'PENDING');
+  assert.equal(pendingApproval.approvalRequired,true);
+  cookie=managerCookie;
+  assert.equal(wallet(await request('/api/dashboard'),'MAYA'),10000);
+  records=await request('/api/transactions');
+  assert.equal(records.find(r=>r.id===pendingApproval.id).cashier_verified,true);
+  await request('/api/transactions/'+pendingApproval.id+'/complete',{verified:true});
+  assert.equal(wallet(await request('/api/dashboard'),'MAYA'),20000);
+
+  await request('/api/cashiers/'+created.id+'/password',{password:'new-cashier-password-123'});
+  await request('/api/cashiers/'+created.id+'/active',{active:false});
+  cookie=cashierCookie;
+  const revoked=await request('/api/me');
+  assert.equal(revoked.loggedIn,false);
+  cookie=managerCookie;
+  await request('/api/cashiers/'+created.id+'/active',{active:true});
+  await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
+  assert.equal((await request('/api/me')).role,'cashier');
   await request('/api/logout',{});
   assert.equal((await request('/api/me')).loggedIn,false);
-  console.log('CASHVERSE smoke test passed: auth, CSV rates, quote, cash-in, cash-out, pending, failure, float, daily earnings.');
+  cookie=managerCookie;
+  await request('/api/logout',{});
+  assert.equal((await request('/api/me')).loggedIn,false);
+  console.log('CASHVERSE v1.1 smoke tests passed: role access, cashier creation, approval, account disabling, password reset, floats and reporting.');
 })().catch(err=>{console.error(err);process.exitCode=1;});
