@@ -1,4 +1,4 @@
-# CASHVERSE v1
+# CASHVERSE v1.1
 
 A simple browser-based **GCash and Maya cash-in/cash-out ledger** for Philippine sari-sari stores. English UI; responsive on phones, tablets, and computers.
 
@@ -6,7 +6,7 @@ A simple browser-based **GCash and Maya cash-in/cash-out ledger** for Philippine
 
 ## Features
 
-- Owner password sign-in
+- Owner/manager password sign-in plus manager-created cashier logins
 - Separate GCash and Maya electronic wallet float balances
 - Cash-in and cash-out transaction entry
 - **CSV-uploaded service fees** by wallet, transaction type, exact amount or amount range
@@ -17,6 +17,12 @@ A simple browser-based **GCash and Maya cash-in/cash-out ledger** for Philippine
 - Daily service-fee earnings summary using **Asia/Manila** dates
 - Manual float adjustments with reasons and adjustment history
 - PostgreSQL for persistent transactions and sessions
+- Dedicated cashier-only mobile transaction screen
+- Server-enforced permissions: cashiers can quote and record transactions only
+- Manager can create, disable, reactivate, and reset cashier accounts
+- Every transaction records the cashier/manager responsible
+- Optional manager approval before cashier records affect wallet float
+- Manager overview and history refresh automatically every 15 seconds while visible
 
 CASHVERSE **does not connect to, withdraw from, transfer to, or process money inside GCash or Maya.** This app records transactions that a cashier performs in the *official provider app*. Never enter customer wallet PINs or OTPs here.
 
@@ -77,7 +83,7 @@ npm run dev
 
 Open http://localhost:3000. The database tables are created automatically on first startup.
 
-First-time workflow: **Log in → Rates: upload CSV → Wallets: add initial floats using positive adjustments → New transaction.** Both floats start at ₱0 so no money is assumed to exist.
+First-time manager workflow: **Log in with username `owner` and the existing owner password → Rates: upload CSV → Wallets: add initial floats using positive adjustments → Cashiers: create cashier accounts → New transaction.** Both floats start at ₱0 so no money is assumed to exist.
 
 ## Railway deployment
 
@@ -103,9 +109,42 @@ npm test
 
 ## V1 notes
 
-- One owner login, no cash drawer or actual bank/provider synchronization.
+- One manager login plus multiple cashier logins; no cash drawer or actual bank/provider synchronization.
 - Pending and Failed records do not affect float or daily earnings.
 - Positive float adjustment adds funds; negative adjustment corrects/reduces float.
 - Dashboard profit means **gross service fees only**; it does not subtract provider fees or other operating expenses.
 - History UI shows latest 200 records; records remain in PostgreSQL.
-- Next enhancements could include cash drawer balance, CSV exports, cashier accounts, audit reversals and backups.
+- Next enhancements could include a cash drawer ledger, CSV exports, audit reversals, and backups.
+
+## V1.1: manager and cashier accounts
+
+**Same website for everyone:** https://cashverse-web-production.up.railway.app
+
+### Manager
+1. Sign in with username `owner` and the existing `OWNER_PASSWORD` set in Railway.
+2. Click **Cashiers**.
+3. Create a cashier with a display name, username, and unique password (minimum 10 characters).
+4. Give their login details privately to the cashier.
+5. Disable, reactivate, or reset each cashier account from the Cashiers page.
+6. Optionally enable **Require manager approval**. This applies to newly recorded cashier transactions after you save the setting.
+
+### Cashier
+1. Sign in to the **same** CASHVERSE URL with the cashier username and password.
+2. The application immediately shows a single mobile-friendly **New Transaction** screen. The manager navigation is hidden.
+3. Choose GCash/Maya and Cash-in/Cash-out, enter the amount (or tap a quick amount), and choose Add/Deduct fee.
+4. Verify the actual transfer in the official provider wallet app. Check the verification box if confirmed, then save.
+5. When manager approval is **off**, a verified cashier transaction completes immediately and updates the shared wallet float. Unverified transactions stay Pending.
+6. When manager approval is **on**, *all* cashier transactions stay Pending without updating float until the manager confirms and completes them from **History**.
+7. Cashiers cannot view account balances, daily earnings, transaction history, wallet adjustments, fee uploads, cashier management, or settings. These restrictions are enforced by the server.
+
+The manager's overview and history automatically refresh approximately every **15 seconds** while that page is open. This is polling, not a direct GCash/Maya integration or instantaneous real-time push. Cashier attribution and the applied fee are preserved in the transaction record, even if the cashier account is later disabled.
+
+## Security and financial-record notes
+
+- Cashier passwords are stored as salted scrypt hashes, not plaintext. Do not share owner credentials with cashiers.
+- Managers should use a unique strong owner password. A password is never shown again after creating or resetting a cashier account.
+- The manager must independently confirm any pending transaction before completing it.
+- A deleted or disabled cashier session cannot continue using protected APIs.
+- Never collect wallet OTPs, PINs, or customer wallet passwords.
+- For production financial use, set up **regular PostgreSQL backups**, validate agent fee policies, and verify transaction references in official provider apps.
+- Historical v1 transaction and wallet data are preserved by additive database migrations.
