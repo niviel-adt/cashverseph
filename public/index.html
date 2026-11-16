@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123a39">
+  <meta name="description" content="CASHVERSE — simple GCash and Maya transaction ledger for small stores.">
+  <title>CASHVERSE • Store Ledger</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <div id="loginScreen" class="auth-layout" hidden>
+    <section class="login-card">
+      <div class="brand-mark">₱</div>
+      <div class="eyebrow">YOUR STORE, SIMPLIFIED</div>
+      <h1>CASHVERSE</h1>
+      <p>Log in to manage your GCash and Maya services.</p>
+      <form id="loginForm">
+        <label for="loginPassword">Owner password</label>
+        <input id="loginPassword" type="password" name="password" autocomplete="current-password" required placeholder="Enter your password">
+        <button class="btn primary full" type="submit">Sign in</button>
+      </form>
+      <p class="small muted">This is a store ledger. Always verify actual transfers in the official GCash or Maya app.</p>
+      <p id="loginError" class="error-text" role="alert"></p>
+    </section>
+  </div>
+
+  <div id="appScreen" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark small-mark">₱</span>
+        <span><strong>CASHVERSE</strong><small>Store Manager <span class="version">V1</span></small></span>
+      </div>
+      <div class="top-right"><span class="live-dot"></span> Store ledger <button class="btn outline tiny" id="logoutBtn">Log out</button></div>
+    </header>
+    <div class="layout">
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-btn active" data-page="overview"><span>◫</span> Overview</button>
+        <button class="nav-btn" data-page="transaction"><span>＋</span> New transaction</button>
+        <button class="nav-btn" data-page="history"><span>▤</span> History</button>
+        <button class="nav-btn" data-page="report"><span>▥</span> Daily report</button>
+        <button class="nav-btn" data-page="wallets"><span>◈</span> Wallets</button>
+        <button class="nav-btn" data-page="rates"><span>⚙</span> Rates</button>
+        <div class="nav-bottom"><small>For GCash and Maya agent bookkeeping only.</small></div>
+      </nav>
+      <main class="content">
+        <div id="notice" role="status" aria-live="polite" hidden></div>
+
+        <section class="page" id="page-overview">
+          <div class="page-top">
+            <div><div class="eyebrow">BUSINESS OVERVIEW</div><h1>Welcome back</h1><p>Your store's wallet and earnings snapshot.</p></div>
+            <button class="btn primary" data-go="transaction">＋ New transaction</button>
+          </div>
+          <div class="cards three">
+            <article class="stat-card">
+              <div class="stat-heading"><span class="wallet-icon gcash">G</span><span>GCash float</span></div>
+              <div class="stat-value" id="gcashFloat">₱0.00</div>
+              <div class="subtext">Available electronic wallet balance</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-heading"><span class="wallet-icon maya">M</span><span>Maya float</span></div>
+              <div class="stat-value" id="mayaFloat">₱0.00</div>
+              <div class="subtext">Available electronic wallet balance</div>
+            </article>
+            <article class="stat-card earnings">
+              <div class="stat-heading"><span class="wallet-icon peso">₱</span><span>Today's earnings</span></div>
+              <div class="stat-value" id="todayEarnings">₱0.00</div>
+              <div class="subtext"><span id="todayCount">0</span> completed transactions today</div>
+            </article>
+          </div>
+          <div class="cards two">
+            <article class="panel">
+              <div class="panel-head"><h2>Quick actions</h2></div>
+              <div class="actions">
+                <button class="action" data-go="transaction"><span class="action-icon">↗</span><span><strong>Record cash-in</strong><small>Customer loads their wallet</small></span><span>›</span></button>
+                <button class="action" data-go="transaction" data-set-type="CASH_OUT"><span class="action-icon">↙</span><span><strong>Record cash-out</strong><small>Customer receives cash</small></span><span>›</span></button>
+                <button class="action" data-go="wallets"><span class="action-icon">◈</span><span><strong>Adjust float</strong><small>Add funds or correct a balance</small></span><span>›</span></button>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><h2>Today's summary</h2></div>
+              <div class="summary-line"><span>Completed transactions</span><strong id="summaryCompleted">0</strong></div>
+              <div class="summary-line"><span>Pending verification</span><strong id="summaryPending">0</strong></div>
+              <div class="summary-line"><span>Service fee earnings</span><strong id="summaryFees">₱0.00</strong></div>
+              <div class="note"><strong>Remember</strong><p>Cash-in reduces your e-wallet float. Cash-out increases it. Confirm real transfers in the official app before marking Completed.</p></div>
+            </article>
+          </div>
+          <article class="panel recent">
+            <div class="panel-head"><h2>Recent transactions</h2><button class="text-btn" data-go="history">View all ›</button></div>
+            <div id="recentList" class="table-wrap"><p class="empty">No transactions yet.</p></div>
+          </article>
+        </section>
+
+        <section class="page" id="page-transaction" hidden>
+          <div class="page-top"><div><div class="eyebrow">CASH-IN / CASH-OUT</div><h1>New transaction</h1><p>Record a verified transfer or save it as pending.</p></div></div>
+          <div class="form-grid">
+            <article class="panel">
+              <h2>Transaction details</h2>
+              <form id="transactionForm" class="stack">
+                <div class="field-pair">
+                  <div><label for="txProvider">Wallet</label><select id="txProvider" name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select></div>
+                  <div><label for="txType">Service</label><select id="txType" name="type"><option value="CASH_IN">Cash-in</option><option value="CASH_OUT">Cash-out</option></select></div>
+                </div>
+                <div><label for="txAmount">Requested amount (₱)</label><input id="txAmount" name="amount" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="e.g. 500.00"></div>
+                <div><label for="txMode">Fee handling</label>
+                  <select id="txMode" name="mode"><option value="ADD">Add fee on top</option><option value="DEDUCT">Deduct fee from amount</option></select>
+                  <p class="hint">Choose how the customer wants the service fee handled.</p>
+                </div>
+                <div><label for="txReference">Wallet reference <span class="optional">(optional)</span></label><input id="txReference" name="reference" maxlength="70" placeholder="Transaction reference number"></div>
+                <div><label for="txNotes">Notes <span class="optional">(optional)</span></label><input id="txNotes" name="notes" maxlength="200" placeholder="Short note"></div>
+                <label class="verify"><input id="txVerified" name="verified" type="checkbox"><span><strong>Verified in the official wallet app</strong><small>Checked = save as Completed. Unchecked = save as Pending without changing wallet float.</small></span></label>
+                <button class="btn primary full" type="submit" id="saveTxBtn">Save transaction</button>
+              </form>
+            </article>
+            <article class="panel preview-panel">
+              <div class="eyebrow">LIVE PREVIEW</div>
+              <h2>Customer breakdown</h2>
+              <div id="quoteState" class="muted small">Enter an amount to see the uploaded rate.</div>
+              <div class="quote-details" id="quoteDetails" hidden>
+                <div class="summary-line"><span>Requested amount</span><strong id="quoteAmount">—</strong></div>
+                <div class="summary-line"><span>Service fee</span><strong id="quoteFee">—</strong></div>
+                <div class="summary-line"><span>Wallet transfer</span><strong id="quoteWallet">—</strong></div>
+                <div class="summary-total"><span id="quoteCashLabel">Customer pays</span><strong id="quoteCash">—</strong></div>
+                <p class="hint" id="quoteFloat"></p>
+              </div>
+              <div class="note"><strong>Safety check</strong><p>CASHVERSE does not send or receive money. It only records transactions you process using the real GCash/Maya app.</p></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" id="page-history" hidden>
+          <div class="page-top"><div><div class="eyebrow">TRANSACTION RECORDS</div><h1>History</h1><p>Latest 200 transactions, including pending items.</p></div><button class="btn outline" id="refreshHistory">Refresh</button></div>
+          <article class="panel"><div class="table-wrap" id="historyTable"><p class="empty">No transactions yet.</p></div></article>
+        </section>
+
+        <section class="page" id="page-report" hidden>
+          <div class="page-top"><div><div class="eyebrow">DAILY EARNINGS</div><h1>Daily report</h1><p>Reports use Philippine time (Asia/Manila).</p></div></div>
+          <article class="panel">
+            <div class="date-filter"><label for="reportDate">Select day</label><input id="reportDate" type="date"><button class="btn primary" id="loadReportBtn">View report</button></div>
+            <div class="cards two mini"><div class="stat-card"><div class="subtext">Fee earnings</div><div class="stat-value" id="reportEarnings">₱0.00</div></div>
+              <div class="stat-card"><div class="subtext">Completed transactions</div><div class="stat-value" id="reportCount">0</div></div></div>
+            <div class="table-wrap" id="reportTable"><p class="empty">Select a date.</p></div>
+          </article>
+        </section>
+
+        <section class="page" id="page-wallets" hidden>
+          <div class="page-top"><div><div class="eyebrow">FLOAT MANAGEMENT</div><h1>Wallet balances</h1><p>Manually replenish your float or correct a record.</p></div></div>
+          <div class="cards two">
+            <article class="stat-card"><div class="stat-heading"><span class="wallet-icon gcash">G</span> GCash float</div><div class="stat-value" id="gcashFloat2">₱0.00</div></article>
+            <article class="stat-card"><div class="stat-heading"><span class="wallet-icon maya">M</span> Maya float</div><div class="stat-value" id="mayaFloat2">₱0.00</div></article>
+          </div>
+          <div class="form-grid">
+            <article class="panel"><h2>Balance adjustment</h2>
+              <form id="adjustForm" class="stack">
+                <div><label for="adjustProvider">Wallet</label><select id="adjustProvider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select></div>
+                <div><label for="adjustAmount">Adjustment amount (₱)</label><input id="adjustAmount" type="number" inputmode="decimal" step="0.01" placeholder="e.g. 1000 or -500" required><p class="hint">Positive adds float. Negative reduces float.</p></div>
+                <div><label for="adjustReason">Reason</label><input id="adjustReason" maxlength="160" placeholder="e.g. Replenishment" required></div>
+                <button class="btn primary" type="submit">Save adjustment</button>
+              </form>
+            </article>
+            <article class="panel"><h2>Recent adjustments</h2><div class="table-wrap" id="adjustmentList"><p class="empty">No adjustments yet.</p></div></article>
+          </div>
+        </section>
+
+        <section class="page" id="page-rates" hidden>
+          <div class="page-top"><div><div class="eyebrow">UPLOADABLE SERVICE FEES</div><h1>Rate list</h1><p>Upload your own CSV table for GCash and Maya.</p></div></div>
+          <div class="form-grid">
+            <article class="panel">
+              <h2>Import rates</h2>
+              <p class="small muted">Upload one CSV containing rates for either or both wallets, cash-in and cash-out. Each row can be an exact amount or a range.</p>
+              <a class="btn outline inline" href="/rates-example.csv" download="cashverse-rates-example.csv">↓ Download sample CSV</a>
+              <form id="ratesForm" class="stack upload-form">
+                <label for="ratesFile">Choose CSV file</label><input id="ratesFile" type="file" accept=".csv,text/csv" required>
+                <button class="btn primary" type="submit">Upload and replace rates</button>
+              </form>
+              <div class="note"><strong>How it works</strong>
+                <p>Columns: <code>provider, transaction_type, min_amount, max_amount, fee</code></p>
+                <p>For an exact amount, set minimum and maximum equal. Exact rules override matching ranges.</p>
+                <p>Uploading replaces the entire active rate table. Previous transaction fees stay unchanged.</p>
+                <p>These are <strong>your store's configured fees</strong>, not official GCash or Maya fee schedules.</p>
+              </div>
+            </article>
+            <article class="panel">
+              <div class="panel-head"><h2>Active fee rules</h2><span class="count-pill" id="rateCount">0 rules</span></div>
+              <div class="table-wrap" id="rateList"><p class="empty">No rate list uploaded yet.</p></div>
+            </article>
+          </div>
+        </section>
+        <footer>© CASHVERSE v1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
+      </main>
+    </div>
+  </div>
+</body>
+</html>
