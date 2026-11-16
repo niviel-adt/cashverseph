@@ -1,0 +1,19 @@
+{
+  "name": "cashverse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GCash/Maya cash-in cash-out ledger for small stores",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "connect-pg-simple": "^10.0.0",
+    "pg": "^8.16.0"
+  }
+}
