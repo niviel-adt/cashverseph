@@ -15,9 +15,11 @@
       <div class="brand-mark">₱</div>
       <div class="eyebrow">YOUR STORE, SIMPLIFIED</div>
       <h1>CASHVERSE</h1>
-      <p>Log in to manage your GCash and Maya services.</p>
+      <p>Sign in as manager or cashier to record store services.</p>
       <form id="loginForm">
-        <label for="loginPassword">Owner password</label>
+        <label for="loginUsername">Username</label>
+        <input id="loginUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="30" value="owner" required placeholder="owner or cashier username">
+        <label for="loginPassword">Password</label>
         <input id="loginPassword" type="password" name="password" autocomplete="current-password" required placeholder="Enter your password">
         <button class="btn primary full" type="submit">Sign in</button>
       </form>
@@ -30,9 +32,9 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark small-mark">₱</span>
-        <span><strong>CASHVERSE</strong><small>Store Manager <span class="version">V1</span></small></span>
+        <span><strong>CASHVERSE</strong><small><span id="roleLabel">Store Manager</span> <span class="version">V1.1</span></small></span>
       </div>
-      <div class="top-right"><span class="live-dot"></span> Store ledger <button class="btn outline tiny" id="logoutBtn">Log out</button></div>
+      <div class="top-right"><span class="live-dot"></span> <span id="userLabel">Store ledger</span> <button class="btn outline tiny" id="logoutBtn">Log out</button></div>
     </header>
     <div class="layout">
       <nav class="nav" aria-label="Main navigation">
@@ -42,6 +44,7 @@
         <button class="nav-btn" data-page="report"><span>▥</span> Daily report</button>
         <button class="nav-btn" data-page="wallets"><span>◈</span> Wallets</button>
         <button class="nav-btn" data-page="rates"><span>⚙</span> Rates</button>
+        <button class="nav-btn" data-page="cashiers"><span>♙</span> Cashiers</button>
         <div class="nav-bottom"><small>For GCash and Maya agent bookkeeping only.</small></div>
       </nav>
       <main class="content">
@@ -102,7 +105,10 @@
                   <div><label for="txProvider">Wallet</label><select id="txProvider" name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select></div>
                   <div><label for="txType">Service</label><select id="txType" name="type"><option value="CASH_IN">Cash-in</option><option value="CASH_OUT">Cash-out</option></select></div>
                 </div>
-                <div><label for="txAmount">Requested amount (₱)</label><input id="txAmount" name="amount" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="e.g. 500.00"></div>
+                <div><label for="txAmount">Requested amount (₱)</label>
+                  <input id="txAmount" name="amount" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" required placeholder="e.g. 500.00">
+                  <div class="quick-amounts"><button type="button" data-amount="100">₱100</button><button type="button" data-amount="200">₱200</button><button type="button" data-amount="500">₱500</button><button type="button" data-amount="1000">₱1,000</button></div>
+                </div>
                 <div><label for="txMode">Fee handling</label>
                   <select id="txMode" name="mode"><option value="ADD">Add fee on top</option><option value="DEDUCT">Deduct fee from amount</option></select>
                   <p class="hint">Choose how the customer wants the service fee handled.</p>
@@ -187,7 +193,35 @@
             </article>
           </div>
         </section>
-        <footer>© CASHVERSE v1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
+        <section class="page" id="page-cashiers" hidden>
+          <div class="page-top"><div><div class="eyebrow">MANAGER ONLY</div><h1>Cashier accounts</h1><p>Cashiers can only record transactions. You control access and approvals.</p></div></div>
+          <div class="form-grid">
+            <article class="panel">
+              <h2>Create cashier</h2>
+              <form id="cashierForm" class="stack">
+                <div><label for="cashierName">Cashier name</label><input id="cashierName" maxlength="80" required placeholder="e.g. Maria"></div>
+                <div><label for="cashierUsername">Username</label><input id="cashierUsername" maxlength="30" pattern="[a-zA-Z][a-zA-Z0-9_.-]{2,29}" autocapitalize="none" spellcheck="false" required placeholder="e.g. maria01"></div>
+                <div><label for="cashierPassword">Cashier password</label><input id="cashierPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required placeholder="At least 10 characters"></div>
+                <button type="submit" class="btn primary">Create cashier login</button>
+              </form>
+              <p class="hint">Give the username and password privately to your cashier. The password is not stored in readable form.</p>
+            </article>
+            <article class="panel">
+              <h2>Transaction approval</h2>
+              <label class="verify" for="requireApproval">
+                <input type="checkbox" id="requireApproval">
+                <span><strong>Require manager approval</strong><small>Cashier-created transactions stay Pending, even after cashier verification, until the manager marks them Completed.</small></span>
+              </label>
+              <button type="button" class="btn outline" id="saveApprovalBtn" style="margin-top:16px">Save approval setting</button>
+              <div class="note"><strong>How cashier accounts work</strong><p>All cashiers use this same website. Each cashier logs in with their username and sees only a streamlined New Transaction screen. The manager can view the cashier's name in the transaction history.</p></div>
+            </article>
+          </div>
+          <article class="panel recent">
+            <div class="panel-head"><h2>Your cashiers</h2><button class="text-btn" id="refreshCashiers">Refresh</button></div>
+            <div class="table-wrap" id="cashierList"><p class="empty">No cashier accounts yet.</p></div>
+          </article>
+        </section>
+        <footer>© CASHVERSE v1.1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
       </main>
     </div>
   </div>
