@@ -22,6 +22,8 @@ const timePh = d => new Date(d).toLocaleString('en-PH', {
 let historyRows = [];
 let quoteSequence = 0;
 let quoteTimer;
+let currentRole = null;
+let currentUsername = null;
 
 async function api(url,method='GET',body) {
   const opts = {method,headers:{}};
@@ -48,6 +50,8 @@ function notify(message,failed=false) {
 }
 function clearNotice(){byId('notice').hidden=true;}
 function showAuth() {
+  currentRole=null;
+  document.body.classList.remove('cashier-mode');
   byId('loginScreen').hidden=false;
   byId('appScreen').hidden=true;
 }
@@ -56,6 +60,7 @@ function showApp() {
   byId('appScreen').hidden=false;
 }
 function showPage(page) {
+  if(currentRole==='cashier')page='transaction';
   clearNotice();
   document.querySelectorAll('.page').forEach(el=>{el.hidden=el.id!=='page-'+page;});
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
@@ -102,12 +107,16 @@ async function refreshHistory() {
       '<button class="table-action" data-action="complete" data-id="'+esc(t.id)+'">Complete</button>'+
       '<button class="table-action fail" data-action="fail" data-id="'+esc(t.id)+'">Fail</button>' : '—';
     return [
-      ...txColumns(t),esc(labelMode(t.mode)),money(t.cash_cents),
-      esc(t.reference||'—'),esc(t.notes||'—'),actions
+      ...txColumns(t),esc(t.created_by_name||'Manager') +
+        (t.created_by_role==='cashier'?' <span class="tag">Cashier</span>':''),
+      esc(labelMode(t.mode)),money(t.cash_cents),
+      esc(t.reference||'—'),esc(t.notes||'—'),
+      (t.status==='PENDING' && t.cashier_verified ? '<span class="tag pending">Cashier verified</span>' : ''),
+      actions
     ];
   });
   byId('historyTable').innerHTML=table(
-    ['Date','Wallet','Service','Amount','Fee','Status','Fee mode','Cash amount','Reference','Notes','Actions'],rows);
+    ['Date','Wallet','Service','Amount','Fee','Status','Recorded by','Fee mode','Cash amount','Reference','Notes','Verification','Actions'],rows);
 }
 async function refreshAdjustments() {
   const rows=await api('/api/adjustments');
@@ -171,8 +180,41 @@ function queueQuote() {
   clearTimeout(quoteTimer);
   quoteTimer=setTimeout(updateQuote,250);
 }
+async function refreshCashiers(){
+  if(currentRole!=='manager')return;
+  const rows=await api('/api/cashiers');
+  byId('cashierList').innerHTML=table(['Cashier','Username','Status','Manage'],
+    rows.map(r=>[
+      '<strong>'+esc(r.display_name)+'</strong>',
+      esc(r.username),
+      r.active?'<span class="tag completed">Active</span>':'<span class="tag failed">Disabled</span>',
+      '<button type="button" class="table-action" data-cashier-action="toggle" data-id="'+esc(r.id)+
+        '" data-active="'+(!r.active)+'">'+(r.active?'Disable':'Enable')+'</button>'+
+      '<button type="button" class="table-action" data-cashier-action="reset" data-id="'+esc(r.id)+
+        '" data-name="'+esc(r.display_name)+'">Reset password</button>'
+    ]));
+}
+async function refreshSettings(){
+  const data=await api('/api/settings');
+  byId('requireApproval').checked=data.cashierApprovalRequired;
+}
 async function loadAll(){
-  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates()]);
+  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates(),refreshCashiers(),refreshSettings()]);
+}
+async function startSession(me){
+  currentRole=me.role;
+  currentUsername=me.name||me.username||'Manager';
+  document.body.classList.toggle('cashier-mode',currentRole==='cashier');
+  byId('roleLabel').textContent=currentRole==='cashier'?'Cashier Terminal':'Store Manager';
+  byId('userLabel').textContent=currentUsername;
+  showApp();
+  if(currentRole==='cashier'){
+    showPage('transaction');
+    byId('txAmount').focus();
+  }else{
+    showPage('overview');
+    await loadAll();
+  }
 }
 function wire(){
   byId('loginForm').addEventListener('submit',async event=>{
@@ -180,9 +222,13 @@ function wire(){
     const btn=event.currentTarget.querySelector('button');
     btn.disabled=true;byId('loginError').textContent='';
     try{
-      await api('/api/login','POST',{password:byId('loginPassword').value});
+      await api('/api/login','POST',{
+        username:byId('loginUsername').value,
+        password:byId('loginPassword').value
+      });
       byId('loginPassword').value='';
-      showApp();showPage('overview');await loadAll();
+      const me=await api('/api/me');
+      await startSession(me);
     }catch(e){byId('loginError').textContent=e.message;}
     finally{btn.disabled=false;}
   });
@@ -204,6 +250,10 @@ function wire(){
   });
   ['txProvider','txMode'].forEach(id=>byId(id).addEventListener('change',updateQuote));
   byId('txAmount').addEventListener('input',queueQuote);
+  document.querySelectorAll('[data-amount]').forEach(btn=>btn.addEventListener('click',()=>{
+    byId('txAmount').value=btn.dataset.amount;
+    updateQuote();
+  }));
   byId('transactionForm').addEventListener('submit',async event=>{
     event.preventDefault();
     const btn=byId('saveTxBtn');
@@ -218,9 +268,13 @@ function wire(){
       byId('txReference').value='';
       byId('txNotes').value='';
       byId('txVerified').checked=false;
-      await Promise.all([refreshDashboard(),refreshHistory(),refreshReport()]);
-      showPage('history');
-      notify('Transaction saved as '+data.status.toLowerCase()+'.');
+      if(currentRole==='manager'){
+        await Promise.all([refreshDashboard(),refreshHistory(),refreshReport()]);
+        showPage('history');
+      }
+      notify(data.approvalRequired && p.verified
+        ? 'Saved as Pending — waiting for manager approval.'
+        : 'Transaction saved as '+data.status.toLowerCase()+'.');
     }catch(e){notify(e.message,true);}
     finally{btn.disabled=false;updateQuote();}
   });
@@ -263,6 +317,69 @@ function wire(){
   byId('loadReportBtn').addEventListener('click',async()=>{
     try{await refreshReport();clearNotice();}catch(e){notify(e.message,true);}
   });
+  byId('cashierForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const btn=e.currentTarget.querySelector('button[type=submit]');
+    btn.disabled=true;
+    try{
+      const name=byId('cashierName').value.trim();
+      const username=byId('cashierUsername').value.trim();
+      await api('/api/cashiers','POST',{name,username,password:byId('cashierPassword').value});
+      byId('cashierForm').reset();
+      await refreshCashiers();
+      notify('Cashier '+name+' created. Share the username and password privately.');
+    }catch(err){notify(err.message,true);}finally{btn.disabled=false;}
+  });
+  byId('saveApprovalBtn').addEventListener('click',async()=>{
+    const btn=byId('saveApprovalBtn');btn.disabled=true;
+    try{
+      const val=byId('requireApproval').checked;
+      await api('/api/settings','POST',{cashierApprovalRequired:val});
+      notify(val?'Manager approval is now required for cashier transactions.'
+        :'Cashiers may complete verified transactions without manager approval.');
+    }catch(err){notify(err.message,true);}
+    finally{btn.disabled=false;}
+  });
+  byId('refreshCashiers').addEventListener('click',async()=>{
+    try{await refreshCashiers();notify('Cashiers refreshed.');}
+    catch(e){notify(e.message,true);}
+  });
+  byId('cashierList').addEventListener('click',async event=>{
+    const btn=event.target.closest('[data-cashier-action]');
+    if(!btn)return;
+    const id=btn.dataset.id,action=btn.dataset.cashierAction;
+    if(action==='reset'){
+      byId('cashierResetId').value=id;
+      byId('cashierResetLabel').textContent='Reset password for '+btn.dataset.name;
+      byId('cashierResetPassword').value='';
+      byId('cashierResetForm').hidden=false;
+      byId('cashierResetPassword').focus();
+      return;
+    }
+    const active=btn.dataset.active==='true';
+    if(!window.confirm((active?'Enable':'Disable')+' this cashier login?'))return;
+    btn.disabled=true;
+    try{
+      await api('/api/cashiers/'+encodeURIComponent(id)+'/active','POST',{active});
+      await refreshCashiers();
+      notify(active?'Cashier login enabled.':'Cashier login disabled.');
+    }catch(e){notify(e.message,true);}finally{btn.disabled=false;}
+  });
+  byId('cancelResetBtn').addEventListener('click',()=>{
+    byId('cashierResetPassword').value='';
+    byId('cashierResetForm').hidden=true;
+  });
+  byId('cashierResetForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    const btn=e.currentTarget.querySelector('[type=submit]');btn.disabled=true;
+    try{
+      await api('/api/cashiers/'+encodeURIComponent(byId('cashierResetId').value)+'/password',
+        'POST',{password:byId('cashierResetPassword').value});
+      byId('cashierResetPassword').value='';
+      byId('cashierResetForm').hidden=true;
+      notify('Cashier password updated. Share it privately with the cashier.');
+    }catch(err){notify(err.message,true);}finally{btn.disabled=false;}
+  });
   byId('ratesForm').addEventListener('submit',async e=>{
     e.preventDefault();
     const file=byId('ratesFile').files[0];
@@ -284,13 +401,22 @@ async function boot(){
   wire();
   try{
     const me=await api('/api/me');
-    if(me.loggedIn){
-      showApp();showPage('overview');
-      await loadAll();
-    }else showAuth();
+    if(me.loggedIn)await startSession(me);
+    else showAuth();
   }catch(e){
     showAuth();
     byId('loginError').textContent='Unable to reach the server. Please refresh the page.';
   }
 }
 boot();
+setInterval(async()=>{
+  if(currentRole!=='manager'||document.visibilityState!=='visible')return;
+  try{
+    const page=[...document.querySelectorAll('.page')].find(el=>!el.hidden)?.id;
+    if(page==='page-overview'||page==='page-history'){
+      await Promise.all([refreshDashboard(),refreshHistory()]);
+    }else if(page==='page-report'){
+      await Promise.all([refreshDashboard(),refreshReport()]);
+    }
+  }catch(e){console.warn('Dashboard refresh failed:',e.message);}
+},15000);
