@@ -1,6 +1,6 @@
 {
   "name": "cashverse",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "GCash/Maya cash-in cash-out ledger for small stores",
   "main": "server.js",
@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node --env-file=.env server.js",
     "test": "node --test test/*.test.js",
-    "check": "node --check server.js && node --check public/app.js && node --check lib/money.js && node --check test/smoke.js"
+    "check": "node --check server.js && node --check public/app.js && node --check lib/money.js && node --check lib/passwords.js && node --check test/smoke.js"
   },
   "engines": {
     "node": ">=20"
