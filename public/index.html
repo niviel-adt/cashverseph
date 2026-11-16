@@ -219,6 +219,13 @@
           <article class="panel recent">
             <div class="panel-head"><h2>Your cashiers</h2><button class="text-btn" id="refreshCashiers">Refresh</button></div>
             <div class="table-wrap" id="cashierList"><p class="empty">No cashier accounts yet.</p></div>
+            <form id="cashierResetForm" class="stack reset-cashier" hidden>
+              <strong id="cashierResetLabel">Reset cashier password</strong>
+              <input type="hidden" id="cashierResetId">
+              <label for="cashierResetPassword">New password (at least 10 characters)</label>
+              <input id="cashierResetPassword" type="password" minlength="10" maxlength="128" autocomplete="new-password" required>
+              <div class="reset-buttons"><button class="btn primary" type="submit">Save new password</button><button class="btn outline" id="cancelResetBtn" type="button">Cancel</button></div>
+            </form>
           </article>
         </section>
         <footer>© CASHVERSE v1.1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
