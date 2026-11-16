@@ -147,6 +147,9 @@ function wallet(dashboard, provider) {
   assert.equal(revoked.loggedIn,false);
   cookie=managerCookie;
   await request('/api/cashiers/'+created.id+'/active',{active:true});
+  cookie=cashierCookie;
+  assert.equal((await request('/api/me')).loggedIn,false,
+    'Old cashier sessions must stay revoked after re-enabling.');
   cookie=''; // Separate new cashier session keeps manager session active.
   await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
   assert.equal((await request('/api/me')).role,'cashier');
