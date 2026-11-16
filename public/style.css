@@ -85,3 +85,38 @@ footer{font-size:11px;color:#9baaa4;margin-top:40px;text-align:center;padding:12
 @media(max-width:1050px){.layout{grid-template-columns:192px minmax(0,1fr)}.content{padding:26px 23px}.nav{padding-inline:10px}.stat-card{padding:20px}.cards.three{gap:11px}.form-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:800px){.layout{display:block}.topbar{padding:0 17px;height:62px}.nav{position:sticky;top:62px;z-index:9;height:auto;display:flex;flex-direction:row;overflow-x:auto;padding:9px 12px;gap:4px;border-right:0;border-bottom:1px solid var(--line);scrollbar-width:none}.nav::-webkit-scrollbar{display:none}.nav-bottom{display:none}.nav-btn{padding:9px 11px;gap:7px;font-size:12px}.nav-btn span{width:auto;font-size:15px}.content{padding:22px 16px}.cards.three{grid-template-columns:repeat(2,minmax(0,1fr))}.cards.three .earnings{grid-column:1/-1}.form-grid{grid-template-columns:1fr}.panel{padding:20px}}
 @media(max-width:500px){h1{font-size:26px}.page-top{align-items:flex-start}.page-top .btn{padding:10px;font-size:11px}.cards.three,.cards.two{grid-template-columns:1fr 1fr;gap:10px}.cards.three .earnings{grid-column:1/-1}.stat-card{padding:16px}.stat-heading{font-size:11px}.stat-value{font-size:23px;margin:10px 0 5px}.subtext{font-size:10px}.wallet-icon{width:26px;height:26px}.cards.two>.panel{grid-column:1/-1}.form-grid{display:block}.form-grid>.panel{margin-bottom:14px}.top-right{gap:6px;font-size:10px}.top-right .live-dot{display:none}.brand strong{font-size:15px}.page-top{margin-bottom:17px}.date-filter{flex-wrap:wrap}.date-filter label{width:100%}.mini .stat-value{font-size:20px}.login-card{padding:28px}}
+
+
+/* CASHVERSE v1.1: dedicated, mobile-first cashier terminal */
+.quick-amounts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:8px}
+.quick-amounts button{border:1px solid #c9e0d4;background:#f2f8f3;color:#236d4c;border-radius:9px;padding:10px 3px;min-height:40px;font-weight:800;font-size:12px}
+.quick-amounts button:hover{background:#dbf1e2}
+.reset-cashier{margin-top:22px;padding:17px;background:#f6faf7;border:1px solid #dcebe2;border-radius:12px}
+.reset-buttons{display:flex;gap:9px;flex-wrap:wrap}
+.cashier-mode .layout{display:block}
+.cashier-mode .nav{display:none}
+.cashier-mode .content{max-width:660px;margin:auto;padding:25px 16px 60px}
+.cashier-mode #page-transaction .page-top{margin-bottom:18px}
+.cashier-mode #page-transaction .page-top .eyebrow::after{content:' • CASHIER TERMINAL'}
+.cashier-mode .form-grid{display:flex;flex-direction:column;gap:12px}
+.cashier-mode .form-grid .panel{width:100%}
+.cashier-mode #page-transaction .panel:first-child{order:1}
+.cashier-mode #page-transaction .preview-panel{order:2}
+.cashier-mode #transactionForm{gap:17px}
+.cashier-mode #txAmount{font-size:25px;font-weight:800;height:62px}
+.cashier-mode #txProvider,.cashier-mode #txType,.cashier-mode #txMode{font-size:16px;min-height:53px}
+.cashier-mode #transactionForm label{font-size:14px}
+.cashier-mode #saveTxBtn{min-height:60px;font-size:17px}
+.cashier-mode #page-transaction .page-top h1{font-size:29px}
+.cashier-mode .preview-panel{min-height:0}
+.cashier-mode .quote-details .summary-total{padding:20px}
+.cashier-mode .quote-details .summary-total strong{font-size:28px}
+.cashier-mode .topbar{position:sticky;top:0}
+@media(max-width:500px){
+ .cashier-mode .content{padding:16px 12px 55px}
+ .cashier-mode .panel{padding:20px 16px}
+ .cashier-mode .topbar{padding:0 13px}
+ .cashier-mode .top-right{font-size:11px}
+ .cashier-mode #page-transaction .page-top .btn{display:none}
+ .cashier-mode #page-transaction .field-pair{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+}
