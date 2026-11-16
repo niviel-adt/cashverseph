@@ -7,6 +7,7 @@ const { parse } = require('csv-parse/sync');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const {toCents, calculate} = require('./lib/money');
+const {makePasswordHash,verifyPassword} = require('./lib/passwords');
 
 for(const k of ['DATABASE_URL','OWNER_PASSWORD','SESSION_SECRET'])
   if(!process.env[k]) throw Error('Missing environment variable: '+k);
@@ -19,6 +20,18 @@ const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy',1);
 app.use(express.json({limit:'150kb'}));
+// Reject cross-site browser mutations; session cookies also use SameSite=strict.
+app.use('/api',(req,res,next)=>{
+  if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
+  const origin=req.get('origin');
+  const host=req.get('x-forwarded-host') || req.get('host');
+  if(origin){
+    let source;
+    try{source=new URL(origin);}catch(e){return res.status(403).json({error:'Invalid origin.'});}
+    if(source.host!==host)return res.status(403).json({error:'Cross-site changes are not permitted.'});
+  }
+  next();
+});
 app.use(session({
   store:new PgSession({pool:db,createTableIfMissing:true}),
   secret:process.env.SESSION_SECRET,name:'cashverse.sid',
@@ -42,29 +55,110 @@ function secureHash(v){return crypto.createHash('sha256').update(v).digest();}
 const attemptMap=new Map();
 
 app.get('/health',async(req,res)=>{
-  try{await db.query('SELECT 1');res.json({ok:true,app:'CASHVERSE',version:'1.0.0'});}
+  try{await db.query('SELECT 1');res.json({ok:true,app:'CASHVERSE',version:'1.1.0'});}
   catch(e){res.status(503).json({ok:false});}
 });
-app.get('/api/me',(req,res)=>res.json({loggedIn:req.session.owner===true}));
+// The original owner password remains valid, preserving existing manager access.
+const isManager=req=>req.session.role==='manager'||req.session.owner===true;
+async function identity(req){
+  if(isManager(req))return {role:'manager',name:'Manager',id:null};
+  if(req.session.role==='cashier'&&req.session.cashierId){
+    const q=await db.query('SELECT id,username,display_name FROM cashiers WHERE id=$1 AND active=true',
+      [req.session.cashierId]);
+    if(q.rows.length)return {role:'cashier',id:q.rows[0].id,name:q.rows[0].display_name,
+      username:q.rows[0].username};
+  }
+  return null;
+}
+app.get('/api/me',async(req,res)=>{
+  const actor=await identity(req);
+  res.json({loggedIn:Boolean(actor),role:actor?.role||null,name:actor?.name||null,username:actor?.username||null});
+});
 app.post('/api/login',async(req,res)=>{
   const p=req.body?.password;
-  if(typeof p!=='string'||p.length>200)throw error('Invalid password.');
+  const user=req.body?.username;
+  if(typeof p!=='string'||p.length>200)throw error('Invalid username or password.',401);
+  if(user!=null && (typeof user!=='string'||user.length>40))throw error('Invalid username or password.',401);
+  const username=(user||'owner').trim().toLowerCase();
   const now=Date.now(),ip=req.ip;
   const tries=(attemptMap.get(ip)||[]).filter(t=>now-t<900000);
   if(tries.length>=7)throw error('Too many attempts. Try again in 15 minutes.',429);
-  if(!crypto.timingSafeEqual(secureHash(p),secureHash(process.env.OWNER_PASSWORD))){
-    tries.push(now);attemptMap.set(ip,tries);throw error('Incorrect password.',401);
+  let cashier=null,valid=false;
+  if(username==='owner'){
+    valid=crypto.timingSafeEqual(secureHash(p),secureHash(process.env.OWNER_PASSWORD));
+  }else if(/^[a-z][a-z0-9_.-]{2,29}$/.test(username)){
+    const r=await db.query('SELECT id,username,display_name,password_hash,active FROM cashiers WHERE username=$1',[username]);
+    if(r.rows.length){
+      cashier=r.rows[0];
+      valid=cashier.active && await verifyPassword(p,cashier.password_hash);
+    }
+  }
+  if(!valid){
+    tries.push(now);attemptMap.set(ip,tries);
+    throw error('Invalid username or password.',401);
   }
   attemptMap.delete(ip);
   await new Promise((resolve,reject)=>req.session.regenerate(e=>e?reject(e):resolve()));
-  req.session.owner=true;
-  res.json({ok:true});
+  req.session.role=username==='owner'?'manager':'cashier';
+  req.session.owner=username==='owner';
+  if(cashier)req.session.cashierId=cashier.id;
+  res.json({ok:true,role:req.session.role});
 });
 app.post('/api/logout',(req,res)=>req.session.destroy(()=>{
   res.clearCookie('cashverse.sid');res.json({ok:true});
 }));
-app.use('/api',(req,res,next)=>req.session.owner===true?next():next(error('Sign in first.',401)));
-
+app.use('/api',async(req,res,next)=>{
+  const actor=await identity(req);
+  if(!actor)throw error('Sign in first.',401);
+  req.actor=actor;
+  next();
+});
+const managerOnly=(req,res,next)=>req.actor.role==='manager'?next():next(error('Manager access required.',403));
+// Cashier access is specifically limited to quote and create-transaction routes.
+// Register manager-only routes behind this middleware.
+app.get('/api/cashiers',managerOnly,async(req,res)=>{
+  const q=await db.query('SELECT id,username,display_name,active,created_at FROM cashiers ORDER BY created_at DESC');
+  res.json(q.rows);
+});
+app.post('/api/cashiers',managerOnly,async(req,res)=>{
+  const username=field(req.body?.username,30,'username').toLowerCase();
+  const name=field(req.body?.name,80,'name');
+  const password=req.body?.password;
+  if(!/^[a-z][a-z0-9_.-]{2,29}$/.test(username)||username==='owner')
+    throw error('Use a unique username with 3–30 letters, digits, dots, underscores or hyphens (starting with a letter).');
+  if(!name)throw error('Cashier name is required.');
+  const passwordHash=await makePasswordHash(password);
+  try{
+    const q=await db.query(
+      'INSERT INTO cashiers(id,username,display_name,password_hash) VALUES($1,$2,$3,$4) RETURNING id,username,display_name,active,created_at',
+      [crypto.randomUUID(),username,name,passwordHash]);
+    res.status(201).json(q.rows[0]);
+  }catch(e){if(e.code==='23505')throw error('That cashier username already exists.',409);throw e;}
+});
+app.post('/api/cashiers/:id/active',managerOnly,async(req,res)=>{
+  if(typeof req.body?.active!=='boolean')throw error('Choose active or inactive.');
+  const q=await db.query('UPDATE cashiers SET active=$1 WHERE id=$2 RETURNING id,username,display_name,active',
+    [req.body.active,req.params.id]);
+  if(!q.rows.length)throw error('Cashier not found.',404);
+  res.json(q.rows[0]);
+});
+app.post('/api/cashiers/:id/password',managerOnly,async(req,res)=>{
+  const passwordHash=await makePasswordHash(req.body?.password);
+  const q=await db.query('UPDATE cashiers SET password_hash=$1 WHERE id=$2 RETURNING id',
+    [passwordHash,req.params.id]);
+  if(!q.rows.length)throw error('Cashier not found.',404);
+  res.json({ok:true});
+});
+app.get('/api/settings',managerOnly,async(req,res)=>{
+  const r=await db.query("SELECT cashier_approval_required FROM app_settings WHERE key='main'");
+  res.json({cashierApprovalRequired:r.rows[0].cashier_approval_required});
+});
+app.post('/api/settings',managerOnly,async(req,res)=>{
+  const enabled=req.body?.cashierApprovalRequired;
+  if(typeof enabled!=='boolean')throw error('Choose whether cashier approval is required.');
+  await db.query("UPDATE app_settings SET cashier_approval_required=$1 WHERE key='main'",[enabled]);
+  res.json({cashierApprovalRequired:enabled});
+});
 async function rate(client,provider,type,amount){
   const q=await client.query(
     "SELECT fee_cents FROM fee_rates WHERE provider=$1 AND txn_type=$2 AND min_cents<=$3 AND max_cents>=$3 "+
@@ -85,7 +179,7 @@ async function makeQuote(client,p){
   return {provider,type,mode,amountCents,feeCents,...calc};
 }
 app.get('/api/quote',async(req,res)=>res.json(await makeQuote(db,req.query)));
-app.get('/api/dashboard',async(req,res)=>{
+app.get('/api/dashboard',managerOnly,async(req,res)=>{
   const [w,d,p]=await Promise.all([
     db.query('SELECT provider,balance_cents FROM wallet_balances ORDER BY provider'),
     db.query("SELECT COUNT(*)::int AS count,COALESCE(SUM(fee_cents),0)::bigint AS fees FROM transactions "+
@@ -95,9 +189,10 @@ app.get('/api/dashboard',async(req,res)=>{
   res.json({wallets:w.rows.map(r=>({provider:r.provider,balanceCents:Number(r.balance_cents)})),
     today:{count:d.rows[0].count,feesCents:Number(d.rows[0].fees)},pending:p.rows[0].count});
 });
-app.get('/api/transactions',async(req,res)=>{
+app.get('/api/transactions',managerOnly,async(req,res)=>{
   const q=await db.query("SELECT id,provider,txn_type AS type,fee_mode AS mode,status,amount_cents,fee_cents,"+
-    "wallet_cents,cash_cents,reference,notes,created_at,completed_at FROM transactions ORDER BY created_at DESC LIMIT 200");
+    "wallet_cents,cash_cents,reference,notes,created_at,completed_at,created_by_name,created_by_role,"+
+    "cashier_verified,approved_by FROM transactions ORDER BY created_at DESC LIMIT 200");
   res.json(q.rows);
 });
 app.post('/api/transactions',async(req,res)=>{
@@ -107,23 +202,29 @@ app.post('/api/transactions',async(req,res)=>{
   try{
     await client.query('BEGIN');
     const q=await makeQuote(client,p);
-    if(verified){
+    const approval=await client.query("SELECT cashier_approval_required FROM app_settings WHERE key='main'");
+    const needsApproval=req.actor.role==='cashier'&&approval.rows[0].cashier_approval_required;
+    const completed=verified&&!needsApproval;
+    if(completed){
       const w=await client.query('SELECT balance_cents FROM wallet_balances WHERE provider=$1 FOR UPDATE',[q.provider]);
       if(Number(w.rows[0].balance_cents)+q.floatDeltaCents<0)throw error('Not enough '+q.provider+' float for this cash-in.');
     }
-    const id=crypto.randomUUID(),status=verified?'COMPLETED':'PENDING';
+    const id=crypto.randomUUID(),status=completed?'COMPLETED':'PENDING';
     await client.query(
       "INSERT INTO transactions(id,provider,txn_type,fee_mode,status,amount_cents,fee_cents,wallet_cents,"+
-      "cash_cents,float_delta_cents,reference,notes,completed_at) "+
-      "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $5='COMPLETED' THEN now() ELSE NULL END)",
-      [id,q.provider,q.type,q.mode,status,q.amountCents,q.feeCents,q.walletCents,q.cashCents,q.floatDeltaCents,reference,notes]);
-    if(verified)await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
+      "cash_cents,float_delta_cents,reference,notes,completed_at,created_by_id,created_by_name,created_by_role,"+
+      "cashier_verified,approved_by) "+
+      "VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $5='COMPLETED' THEN now() ELSE NULL END,$13,$14,$15,$16,$17)",
+      [id,q.provider,q.type,q.mode,status,q.amountCents,q.feeCents,q.walletCents,q.cashCents,q.floatDeltaCents,
+        reference,notes,req.actor.id,req.actor.name,req.actor.role,verified,
+        completed?req.actor.name:null]);
+    if(completed)await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
       [q.floatDeltaCents,q.provider]);
     await client.query('COMMIT');
-    res.status(201).json({id,status,...q});
+    res.status(201).json({id,status,approvalRequired:needsApproval,verifiedByCashier:verified,...q});
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 });
-app.post('/api/transactions/:id/complete',async(req,res)=>{
+app.post('/api/transactions/:id/complete',managerOnly,async(req,res)=>{
   if(req.body?.verified!==true)throw error('Verify the transfer in the official wallet app first.');
   const client=await db.connect();
   try{
@@ -136,17 +237,17 @@ app.post('/api/transactions/:id/complete',async(req,res)=>{
     if(Number(w.rows[0].balance_cents)+Number(t.float_delta_cents)<0)throw error('Not enough '+t.provider+' float for this cash-in.');
     await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
       [t.float_delta_cents,t.provider]);
-    await client.query("UPDATE transactions SET status='COMPLETED',completed_at=now() WHERE id=$1",[t.id]);
+    await client.query("UPDATE transactions SET status='COMPLETED',completed_at=now(),approved_by='Manager' WHERE id=$1",[t.id]);
     await client.query('COMMIT');
     res.json({ok:true});
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 });
-app.post('/api/transactions/:id/fail',async(req,res)=>{
+app.post('/api/transactions/:id/fail',managerOnly,async(req,res)=>{
   const q=await db.query("UPDATE transactions SET status='FAILED' WHERE id=$1 AND status='PENDING' RETURNING id",[req.params.id]);
   if(!q.rows.length)throw error('Only pending transactions can be marked failed.');
   res.json({ok:true});
 });
-app.post('/api/adjustments',async(req,res)=>{
+app.post('/api/adjustments',managerOnly,async(req,res)=>{
   const p=req.body||{},provider=choice(p.provider,providers,'wallet'),
     delta=cents(p.amount,true),reason=field(p.reason,160,'reason');
   if(!delta)throw error('Adjustment cannot be zero.');
@@ -164,11 +265,11 @@ app.post('/api/adjustments',async(req,res)=>{
     await client.query('COMMIT');res.status(201).json({provider,balanceCents:next});
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 });
-app.get('/api/adjustments',async(req,res)=>{
+app.get('/api/adjustments',managerOnly,async(req,res)=>{
   const q=await db.query('SELECT provider,delta_cents,reason,created_at FROM adjustments ORDER BY created_at DESC LIMIT 100');
   res.json(q.rows);
 });
-app.get('/api/report',async(req,res)=>{
+app.get('/api/report',managerOnly,async(req,res)=>{
   const date=req.query.date;
   if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z')))
     throw error('Invalid report date.');
@@ -180,11 +281,11 @@ app.get('/api/report',async(req,res)=>{
   res.json({date,timezone:'Asia/Manila',rows,totalCount:rows.reduce((n,r)=>n+r.count,0),
     totalFeesCents:rows.reduce((n,r)=>n+r.fees_cents,0)});
 });
-app.get('/api/rates',async(req,res)=>{
+app.get('/api/rates',managerOnly,async(req,res)=>{
   const q=await db.query('SELECT provider,txn_type AS type,min_cents,max_cents,fee_cents FROM fee_rates ORDER BY provider,txn_type,min_cents');
   res.json(q.rows);
 });
-app.post('/api/rates/import',async(req,res)=>{
+app.post('/api/rates/import',managerOnly,async(req,res)=>{
   const csv=req.body?.csv;
   if(typeof csv!=='string'||csv.length>100000)throw error('Select a CSV file under 100 KB.');
   let rows;
@@ -247,6 +348,21 @@ async function init(){
     "provider text NOT NULL CHECK(provider IN ('GCASH','MAYA')),delta_cents bigint NOT NULL CHECK(delta_cents<>0),"+
     "reason text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());"
   );
+  // Additive schema changes preserve all v1 transactions and balances.
+  await db.query(
+    "CREATE TABLE IF NOT EXISTS cashiers ("+
+    "id text PRIMARY KEY, username text NOT NULL UNIQUE, display_name text NOT NULL,"+
+    "password_hash text NOT NULL, active boolean NOT NULL DEFAULT true,"+
+    "created_at timestamptz NOT NULL DEFAULT now());"+
+    "CREATE TABLE IF NOT EXISTS app_settings ("+
+    "key text PRIMARY KEY, cashier_approval_required boolean NOT NULL DEFAULT false);"+
+    "INSERT INTO app_settings(key) VALUES('main') ON CONFLICT(key) DO NOTHING;"+
+    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_id text;"+
+    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_name text NOT NULL DEFAULT 'Manager';"+
+    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS created_by_role text NOT NULL DEFAULT 'manager';"+
+    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS cashier_verified boolean NOT NULL DEFAULT false;"+
+    "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS approved_by text;"
+  );
 }
 init().then(()=>app.listen(Number(process.env.PORT||3000),'0.0.0.0',
-  ()=>console.log('CASHVERSE v1 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
+  ()=>console.log('CASHVERSE v1.1 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
