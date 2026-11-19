@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#123a39"><title>Cashverse Cashier</title><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="terminal.css"><script defer src="terminal.js"></script></head>
+<body><header><b>₱</b><strong>Cashverse Cashier</strong><button id="logout" hidden>Sign out</button></header><main>
+<p id="message" role="status">Connecting…</p>
+<section id="auth" hidden><h1>Cashier sign-in</h1><form id="login"><label>Username<input name="username" autocomplete="username" autocapitalize="none" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button></form></section>
+<section id="entry" hidden><h1>New transaction</h1><form id="details"><div class="pair"><label>Service<select name="type"><option value="CASH_IN">Cash in</option><option value="CASH_OUT">Cash out</option></select></label><label>Wallet<select name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select></label></div>
+<label>Amount (₱)<input name="amount" inputmode="decimal" type="number" min=".01" step=".01" required></label><label>Service fee<select name="mode"><option value="ADD">Add on top</option><option value="DEDUCT">Deduct from amount</option></select></label>
+<label>Wallet reference (optional)<input name="reference" maxlength="70"></label><label>Notes (optional)<input name="notes" maxlength="200"></label><label class="check"><input name="verified" type="checkbox">I verified the transfer in the wallet app</label><button>Review transaction</button></form></section>
+<section id="review" hidden><h1 id="heading">Review transaction</h1><p id="summary"></p><strong id="cash"></strong><p id="fee"></p><p id="statusHint"></p><button id="confirm">Record transaction</button><button class="secondary" id="back">Edit details</button></section>
+<section id="receipt" hidden><h1>Transaction recorded</h1><p id="result"></p><small id="ref"></small><button id="next">New transaction</button></section>
+<aside id="install">On Android, open Chrome’s menu and choose <strong>Add to Home screen</strong> or <strong>Install app</strong>.</aside></main></body></html>

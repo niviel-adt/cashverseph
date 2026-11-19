@@ -84,6 +84,7 @@ app.post('/api/login',async(req,res)=>{
   if(typeof p!=='string'||p.length>200)throw error('Invalid username or password.',401);
   if(user!=null && (typeof user!=='string'||user.length>40))throw error('Invalid username or password.',401);
   const username=(user||'owner').trim().toLowerCase();
+  if(req.body.cashierOnly && username==='owner')throw error('Use your cashier account.',403);
   const now=Date.now(),ip=req.ip;
   const tries=(attemptMap.get(ip)||[]).filter(t=>now-t<900000);
   if(tries.length>=7)throw error('Too many attempts. Try again in 15 minutes.',429);
@@ -205,7 +206,27 @@ app.post('/api/transactions',async(req,res)=>{
   const client=await db.connect();
   try{
     await client.query('BEGIN');
+    const keyed=p.requestId!==undefined;
+    if(keyed){
+      if(req.actor.role!=='cashier'||req.actor.username!==p.cashierUsername)
+        throw error('Sign in as the cashier who started this transaction.',403);
+      if(typeof p.requestId!=='string'||!/^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i.test(p.requestId))
+        throw error('Invalid transaction request.');
+      const fingerprint=secureHash(JSON.stringify([p.provider,p.type,p.mode,p.amount,p.expectedFeeCents,
+        reference,notes,verified])).toString('hex');
+      const key=[req.actor.id,p.requestId];
+      const inserted=await client.query(
+        'INSERT INTO cashier_requests(cashier_id,request_id,fingerprint) VALUES($1,$2,$3) ON CONFLICT DO NOTHING',
+        [...key,fingerprint]);
+      if(!inserted.rowCount){
+        const prior=(await client.query('SELECT fingerprint,receipt FROM cashier_requests WHERE cashier_id=$1 AND request_id=$2',key)).rows[0];
+        if(prior.fingerprint!==fingerprint)throw error('Request already used for another transaction.',409);
+        await client.query('COMMIT');
+        return res.json(prior.receipt);
+      }
+    }
     const q=await makeQuote(client,p);
+    if(keyed && p.expectedFeeCents!==q.feeCents)throw error('The service fee changed. Review the updated amount.',409);
     const approval=await client.query("SELECT cashier_approval_required FROM app_settings WHERE key='main'");
     const needsApproval=req.actor.role==='cashier'&&approval.rows[0].cashier_approval_required;
     const completed=verified&&!needsApproval;
@@ -224,8 +245,11 @@ app.post('/api/transactions',async(req,res)=>{
         completed?req.actor.name:null]);
     if(completed)await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
       [q.floatDeltaCents,q.provider]);
+    const receipt={id,status,approvalRequired:needsApproval,verifiedByCashier:verified,...q};
+    if(keyed)await client.query('UPDATE cashier_requests SET receipt=$3 WHERE cashier_id=$1 AND request_id=$2',
+      [req.actor.id,p.requestId,receipt]);
     await client.query('COMMIT');
-    res.status(201).json({id,status,approvalRequired:needsApproval,verifiedByCashier:verified,...q});
+    res.status(201).json(receipt);
   }catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}
 });
 app.post('/api/transactions/:id/complete',managerOnly,async(req,res)=>{
@@ -358,6 +382,8 @@ async function init(){
     "id text PRIMARY KEY, username text NOT NULL UNIQUE, display_name text NOT NULL,"+
     "password_hash text NOT NULL, active boolean NOT NULL DEFAULT true, auth_version integer NOT NULL DEFAULT 1,"+
     "created_at timestamptz NOT NULL DEFAULT now());"+
+    "CREATE TABLE IF NOT EXISTS cashier_requests(cashier_id text NOT NULL REFERENCES cashiers(id),"+
+    "request_id uuid NOT NULL,fingerprint text NOT NULL,receipt jsonb,PRIMARY KEY(cashier_id,request_id));"+
     "CREATE TABLE IF NOT EXISTS app_settings ("+
     "key text PRIMARY KEY, cashier_approval_required boolean NOT NULL DEFAULT false);"+
     "INSERT INTO app_settings(key) VALUES('main') ON CONFLICT(key) DO NOTHING;"+
@@ -371,3 +397,4 @@ async function init(){
 }
 init().then(()=>app.listen(Number(process.env.PORT||3000),'0.0.0.0',
   ()=>console.log('CASHVERSE v1.1 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
+
