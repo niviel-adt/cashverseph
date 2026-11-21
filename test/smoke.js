@@ -282,7 +282,7 @@ function wallet(dashboard, provider) {
   assert.equal(transactionRows.filter(x=>x.notes?.startsWith('Customer QR order')).length,3);
   const exportedOrders=await request('/api/launch/backup');
   assert.equal(exportedOrders.orders.length,4);
-  assert.equal(exportedOrders.cash_drawer.balance_cents,173000);
+  assert.equal(Number(exportedOrders.cash_drawer.balance_cents),173000);
   assert.equal(exportedOrders.orders.every(x=>!Object.hasOwn(x,'qr_image')),true);
   await request('/api/orders/config',{enabled:false,maxCashout:'1500'});
 
@@ -308,7 +308,7 @@ function wallet(dashboard, provider) {
   const archive=await request('/api/launch/archives/'+reset.archiveId);
   assert.ok(archive.transactions.length>=5);
   assert.equal(archive.orders.length,4);
-  assert.equal(archive.drawer_state.balance_cents,173000);
+  assert.equal(Number(archive.drawer_state.balance_cents),173000);
   const after=await request('/api/launch/summary');
   assert.equal(after.transactions,0);
   assert.equal(after.adjustments,0);
