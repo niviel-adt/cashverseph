@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>CASHVERSE — Customer QR Orders</title>
+<link rel="stylesheet" href="/order.css">
+<script src="/order.js" defer></script>
+</head>
+<body>
+<header class="top"><div class="brand"><span class="logo">₱</span><div><b>CASHVERSE</b><small>CUSTOMER SERVICES</small></div></div><span class="tag">GCash · Maya</span></header>
+<main class="container">
+  <div class="intro"><p class="eyebrow">YOUR NEIGHBORHOOD CASH SERVICES</p><h1>What would you like to do?</h1><p>Request cash-in or cash-out. Your store cashier completes the transaction using the official wallet app.</p></div>
+  <div id="error" class="banner danger" role="alert" hidden></div>
+  <div id="offline" class="banner warning" hidden>Customer QR orders are not open yet. Please ask your store cashier for assistance.</div>
+  <section id="newOrder">
+    <div class="methods" role="group" aria-label="Select a service">
+      <button type="button" class="method active" data-service="CASH_IN" data-fulfillment="WALK_IN"><span>↘</span><b>Cash In</b><small>Load wallet</small></button>
+      <button type="button" class="method" data-service="CASH_OUT" data-fulfillment="WALK_IN"><span>↗</span><b>Cash Out</b><small>Walk-in</small></button>
+      <button type="button" class="method" data-service="CASH_OUT" data-fulfillment="PICKUP"><span>◷</span><b>Reserve Cash</b><small>Pickup later</small></button>
+    </div>
+    <form id="orderForm" class="sheet">
+      <div class="sheet-head"><h2 id="formTitle">Request cash-in</h2><p id="formSub">Upload your receiving QR so the cashier can check the destination.</p></div>
+      <div class="two">
+        <div><label for="provider">Wallet</label><select id="provider" required><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select></div>
+        <div><label for="mode">Service fee</label><select id="mode"><option value="ADD">Add fee on top</option><option value="DEDUCT">Deduct fee</option></select></div>
+      </div>
+      <label for="amount">Requested amount (₱)</label><input id="amount" type="number" inputmode="decimal" min="0.01" max="1000000" step="0.01" placeholder="e.g. 500.00" required>
+      <div class="quick"><button type="button" data-amount="100">₱100</button><button type="button" data-amount="200">₱200</button><button type="button" data-amount="500">₱500</button><button type="button" data-amount="1000">₱1,000</button></div>
+      <label for="customerName">Your name or nickname <span class="optional">(optional)</span></label><input id="customerName" maxlength="60" autocomplete="nickname" placeholder="Name for the cashier">
+      <div id="cashinQr">
+        <label for="qrFile">Screenshot of your receiving QR <span class="required">required</span></label>
+        <input id="qrFile" type="file" accept="image/png,image/jpeg,image/webp" required>
+        <p class="hint">Use your own receiving QR from the official GCash/Maya app. Do not upload a payment receipt, wallet PIN, OTP or ID card.</p>
+        <img id="qrPreview" class="preview" alt="Uploaded receiving QR preview" hidden>
+      </div>
+      <div id="pickupInfo" hidden>
+        <label for="pickupAt">Pickup date and time (Philippine time)</label>
+        <input id="pickupAt" type="datetime-local">
+        <p class="hint">Choose a time at least 30 minutes from now and within the next 7 days. Reservations require manager confirmation; do not send money in advance.</p>
+      </div>
+      <div id="cashoutInfo" class="notice" hidden><strong>Cash-out instructions</strong><p>Submit your request, then follow the cashier's official GCash/Maya payment instructions. Do not send funds based only on a screenshot. Cash is released only after the store verifies receipt.</p></div>
+      <div id="quote" class="quote" hidden>
+        <div><span>Requested amount</span><strong id="quoteAmount">—</strong></div>
+        <div><span>Store service fee</span><strong id="quoteFee">—</strong></div>
+        <div><span id="quoteWalletLabel">Wallet receives</span><strong id="quoteWallet">—</strong></div>
+        <div class="grand"><span id="quoteCashLabel">Cash to pay</span><strong id="quoteCash">—</strong></div>
+      </div>
+      <div id="quoteError" class="hint err"></div>
+      <button id="sendBtn" type="submit" class="primary" disabled>Submit request</button>
+      <p class="footnote">This is a request only. No payment is processed by CASHVERSE. The final transaction must be verified by store staff in the official wallet app.</p>
+    </form>
+  </section>
+  <section id="orderStatus" class="sheet status" hidden aria-live="polite">
+    <span class="status-icon">✓</span>
+    <p class="eyebrow">REQUEST SUBMITTED</p><h2>Keep your order number</h2>
+    <p>Show this code to the cashier when you visit the store.</p>
+    <div class="order-code" id="orderCode">—</div>
+    <div class="state" id="orderState">Checking status…</div>
+    <div id="orderDetails"></div>
+    <p class="hint">Updates appear here automatically while this page is open. This page does not confirm a wallet transfer.</p>
+    <button type="button" id="newOrderBtn" class="secondary">Make another request</button>
+  </section>
+</main>
+<footer>© CASHVERSE · Wallet agent bookkeeping only. Never share OTPs, wallet passwords, or PINs.</footer>
+</body></html>
