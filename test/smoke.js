@@ -167,6 +167,125 @@ function wallet(dashboard, provider) {
   await request('/api/logout',{});
   cookie=managerCookie;
 
+  // V1.2 public QR ordering is OFF by default. Cashier cannot change store settings.
+  const publicSettings=await request('/api/public/orders/config');
+  assert.equal(publicSettings.enabled,false);
+  const deniedPublic=await fetch(BASE+'/api/public/orders',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})
+  });
+  assert.equal(deniedPublic.status,503);
+  cookie='';
+  await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
+  await forbidden('/api/orders/drawer');
+  await forbidden('/api/orders/config','POST',{enabled:true,maxCashout:'200'});
+  await forbidden('/api/orders/store-qr','POST',{provider:'GCASH',imageData:'bad'});
+  await request('/api/logout',{});
+  cookie=managerCookie;
+
+  const openingDrawer=await request('/api/orders/drawer/adjust',{
+    initial:true,amount:'2000',reason:'V1.2 smoke test opening cash'
+  });
+  assert.equal(openingDrawer.ok,true);
+  const drawerStart=await request('/api/orders/drawer');
+  assert.equal(drawerStart.balanceCents,200000);
+  assert.equal(drawerStart.enabled,true);
+  await request('/api/orders/config',{enabled:true,maxCashout:'1500'});
+  assert.equal((await request('/api/public/orders/config')).enabled,true);
+  const orderQuote=await request('/api/public/orders/quote?provider=GCASH&service=CASH_OUT&mode=DEDUCT&amount=100');
+  assert.equal(orderQuote.cashCents,9000);
+  assert.equal(orderQuote.walletCents,10000);
+  const tinyPng='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9xK3N9sAAAAASUVORK5CYII=';
+  const crypto=require('node:crypto');
+  const cashinPayload={
+    requestId:crypto.randomUUID(),service:'CASH_IN',provider:'GCASH',mode:'ADD',amount:'100',
+    customerName:'QR Test Customer',imageData:tinyPng
+  };
+  cookie=''; // Public customer, no cashier/manager session.
+  const customerCashIn=await request('/api/public/orders',cashinPayload);
+  assert.ok(customerCashIn.orderCode.startsWith('CV-'));
+  assert.equal(customerCashIn.status,'NEW');
+  const duplicate=await request('/api/public/orders',cashinPayload);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(duplicate.orderCode,customerCashIn.orderCode);
+  const visibleStatus=await request('/api/public/orders/'+customerCashIn.token);
+  assert.equal(visibleStatus.status,'NEW');
+  assert.equal(Object.hasOwn(visibleStatus,'qr_image'),false);
+  cookie=managerCookie;
+  let orderRows=await request('/api/orders');
+  const cashInOrder=orderRows.find(o=>o.order_code===customerCashIn.orderCode);
+  assert.equal(cashInOrder.has_qr,true);
+  await request('/api/orders/'+cashInOrder.id+'/claim',{});
+  await request('/api/orders/'+cashInOrder.id+'/finish',{
+    verified:true,cashConfirmed:true,reference:'QR-CI-001'
+  });
+  const afterCashIn=await request('/api/orders/drawer');
+  assert.equal(afterCashIn.balanceCents,211000);
+  assert.equal(wallet(await request('/api/dashboard'),'GCASH'),41000);
+  assert.equal((await request('/api/public/orders/'+customerCashIn.token)).status,'COMPLETED');
+  const cashOutPayload={
+    requestId:crypto.randomUUID(),service:'CASH_OUT',fulfillment:'WALK_IN',
+    provider:'GCASH',mode:'DEDUCT',amount:'100'
+  };
+  cookie='';
+  const customerCashOut=await request('/api/public/orders',cashOutPayload);
+  cookie=managerCookie;
+  orderRows=await request('/api/orders');
+  const walkInOrder=orderRows.find(o=>o.order_code===customerCashOut.orderCode);
+  assert.equal(walkInOrder.cash_cents,9000);
+  await request('/api/orders/'+walkInOrder.id+'/claim',{});
+  await request('/api/orders/'+walkInOrder.id+'/finish',{
+    verified:true,cashConfirmed:true,reference:'QR-CO-001'
+  });
+  assert.equal((await request('/api/orders/drawer')).balanceCents,202000);
+  assert.equal(wallet(await request('/api/dashboard'),'GCASH'),51000);
+  const pickupDate=new Date(Date.now()+2*3600000+8*3600000).toISOString().slice(0,16);
+  cookie='';
+  const customerPickup=await request('/api/public/orders',{
+    requestId:crypto.randomUUID(),service:'CASH_OUT',fulfillment:'PICKUP',provider:'GCASH',
+    mode:'DEDUCT',amount:'300',pickupAt:pickupDate,customerName:'Pickup Test'
+  });
+  cookie=managerCookie;
+  orderRows=await request('/api/orders');
+  const pickupOrder=orderRows.find(o=>o.order_code===customerPickup.orderCode);
+  assert.equal(pickupOrder.status,'NEW');
+  await request('/api/orders/'+pickupOrder.id+'/claim',{});
+  assert.equal((await request('/api/orders/drawer')).heldCents,29000);
+  assert.equal((await request('/api/orders/drawer')).availableCents,173000);
+  const noOverspend=await fetch(BASE+'/api/orders/drawer/adjust',{
+    method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},
+    body:JSON.stringify({amount:'-1900',reason:'Not enough cash'})
+  });
+  assert.equal(noOverspend.status,409);
+  cookie='';
+  await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
+  await request('/api/orders/'+pickupOrder.id+'/claim',{});
+  const waiting=await request('/api/orders/'+pickupOrder.id+'/finish',{
+    verified:true,cashConfirmed:true,reference:'QR-PICKUP-001'
+  });
+  assert.equal(waiting.status,'AWAITING_APPROVAL');
+  cookie=managerCookie;
+  assert.equal((await request('/api/orders/drawer')).heldCents,29000);
+  await request('/api/orders/'+pickupOrder.id+'/approve',{
+    verified:true,cashConfirmed:true,reference:'QR-PICKUP-001'
+  });
+  assert.equal((await request('/api/orders/drawer')).heldCents,0);
+  assert.equal((await request('/api/orders/drawer')).balanceCents,173000);
+  assert.equal(wallet(await request('/api/dashboard'),'GCASH'),81000);
+  cookie='';
+  const other=await request('/api/public/orders',{...cashOutPayload,requestId:crypto.randomUUID()});
+  cookie=managerCookie;
+  orderRows=await request('/api/orders');
+  const reject=orderRows.find(o=>o.order_code===other.orderCode);
+  await request('/api/orders/'+reject.id+'/reject',{reason:'Customer did not appear'});
+  assert.equal((await request('/api/public/orders/'+other.token)).status,'REJECTED');
+  const transactionRows=await request('/api/transactions');
+  assert.equal(transactionRows.filter(x=>x.notes?.startsWith('Customer QR order')).length,3);
+  const exportedOrders=await request('/api/launch/backup');
+  assert.equal(exportedOrders.orders.length,4);
+  assert.equal(exportedOrders.cash_drawer.balance_cents,173000);
+  assert.equal(exportedOrders.orders.every(x=>!Object.hasOwn(x,'qr_image')),true);
+  await request('/api/orders/config',{enabled:false,maxCashout:'1500'});
+
   // Owner can download a record export and reset test activity while retaining settings/accounts/rates.
   const before=await request('/api/launch/summary');
   assert.ok(before.transactions>=5);
@@ -188,9 +307,15 @@ function wallet(dashboard, provider) {
   assert.equal(reset.ok,true);
   const archive=await request('/api/launch/archives/'+reset.archiveId);
   assert.ok(archive.transactions.length>=5);
+  assert.equal(archive.orders.length,4);
+  assert.equal(archive.drawer_state.balance_cents,173000);
   const after=await request('/api/launch/summary');
   assert.equal(after.transactions,0);
   assert.equal(after.adjustments,0);
+  assert.equal(after.customer_orders,0);
+  assert.equal(Number(after.cash_drawer_cents),0);
+  assert.equal((await request('/api/orders/drawer')).enabled,false);
+  assert.equal((await request('/api/public/orders/config')).enabled,false);
   assert.equal(after.rates,5);
   assert.equal(after.cashiers,1);
   assert.equal(after.wallets.every(w=>Number(w.balanceCents)===0),true);
@@ -205,5 +330,5 @@ function wallet(dashboard, provider) {
 
   await request('/api/logout',{});
   assert.equal((await request('/api/me')).loggedIn,false);
-  console.log('CASHVERSE v1.1 smoke tests passed: role access, cashier creation, approval, account disabling, password reset, floats, reporting, launch backup and reset.');
+  console.log('CASHVERSE v1.2 smoke tests passed: role access, cashier creation, approval, account disabling, password reset, floats, reporting, launch backup and reset.');
 })().catch(err=>{console.error(err);process.exitCode=1;});
