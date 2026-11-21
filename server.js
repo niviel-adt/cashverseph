@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const {toCents, calculate} = require('./lib/money');
 const {makePasswordHash,verifyPassword} = require('./lib/passwords');
+const {publicRoutes,staffRoutes,initOrders,drawerChange} = require('./orders');
 
 for(const k of ['DATABASE_URL','OWNER_PASSWORD','SESSION_SECRET'])
   if(!process.env[k]) throw Error('Missing environment variable: '+k);
@@ -22,7 +23,7 @@ const db = new Pool({connectionString:process.env.DATABASE_URL,max:10});
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy',1);
-app.use(express.json({limit:'150kb'}));
+app.use(express.json({limit:'1mb'}));
 // Reject cross-site browser mutations; session cookies also use SameSite=strict.
 app.use('/api',(req,res,next)=>{
   if(['GET','HEAD','OPTIONS'].includes(req.method))return next();
@@ -58,7 +59,7 @@ function secureHash(v){return crypto.createHash('sha256').update(v).digest();}
 const attemptMap=new Map();
 
 app.get('/health',async(req,res)=>{
-  try{await db.query('SELECT 1');res.json({ok:true,app:'CASHVERSE',version:'1.1.0'});}
+  try{await db.query('SELECT 1');res.json({ok:true,app:'CASHVERSE',version:'1.2.0'});}
   catch(e){res.status(503).json({ok:false});}
 });
 // The original owner password remains valid, preserving existing manager access.
@@ -112,6 +113,8 @@ app.post('/api/login',async(req,res)=>{
 app.post('/api/logout',(req,res)=>req.session.destroy(()=>{
   res.clearCookie('cashverse.sid');res.json({ok:true});
 }));
+// Public, rate-limited QR order submission; no login needed.
+app.use('/api/public/orders',publicRoutes(db));
 app.use('/api',async(req,res,next)=>{
   const actor=await identity(req);
   if(!actor)throw error('Sign in first.',401);
@@ -119,6 +122,7 @@ app.use('/api',async(req,res,next)=>{
   next();
 });
 const managerOnly=(req,res,next)=>req.actor.role==='manager'?next():next(error('Manager access required.',403));
+app.use('/api/orders',staffRoutes(db));
 // Cashier access is specifically limited to quote and create-transaction routes.
 // Register manager-only routes behind this middleware.
 app.get('/api/cashiers',managerOnly,async(req,res)=>{
@@ -170,6 +174,8 @@ app.get('/api/launch/summary',managerOnly,async(req,res)=>{
   const result=await db.query(
     "SELECT (SELECT COUNT(*)::int FROM transactions) AS transactions,"+
     "(SELECT COUNT(*)::int FROM adjustments) AS adjustments,"+
+    "(SELECT COUNT(*)::int FROM customer_orders) AS customer_orders,"+
+    "(SELECT (SELECT balance_cents FROM cash_drawer WHERE id=1)) AS cash_drawer_cents,"+
     "(SELECT COUNT(*)::int FROM cashiers) AS cashiers,"+
     "(SELECT COUNT(*)::int FROM fee_rates) AS rates,"+
     "(SELECT COUNT(*)::int FROM launch_archives) AS archive_count,"+
@@ -184,6 +190,9 @@ app.get('/api/launch/backup',managerOnly,async(req,res)=>{
     "(SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY a.created_at),'[]'::jsonb) FROM adjustments a) AS adjustments,"+
     "(SELECT COALESCE(jsonb_agg(to_jsonb(w) ORDER BY w.provider),'[]'::jsonb) FROM wallet_balances w) AS wallets,"+
     "(SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.provider,r.txn_type,r.min_cents),'[]'::jsonb) FROM fee_rates r) AS fee_rates,"+
+    "(SELECT COALESCE(jsonb_agg(to_jsonb(o)-'qr_image' ORDER BY o.created_at),'[]'::jsonb) FROM customer_orders o) AS orders,"+
+    "(SELECT to_jsonb(d) FROM cash_drawer d WHERE id=1) AS cash_drawer,"+
+    "(SELECT COALESCE(jsonb_agg(to_jsonb(m) ORDER BY m.created_at),'[]'::jsonb) FROM cash_drawer_movements m) AS cash_drawer_movements,"+
     "(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'username',username,'display_name',display_name,'active',active,'created_at',created_at)),'[]'::jsonb) FROM cashiers) AS cashier_profiles"
   );
   res.set('Content-Disposition','attachment; filename="cashverse-prelaunch-export.json"');
@@ -204,24 +213,32 @@ app.post('/api/launch/reset',managerOnly,async(req,res)=>{
   try{
     await client.query('BEGIN');
     // Exclude concurrent writers until the complete snapshot and reset have committed.
-    await client.query('LOCK TABLE transactions, adjustments, cashier_requests, wallet_balances IN ACCESS EXCLUSIVE MODE');
+    await client.query('LOCK TABLE transactions, adjustments, cashier_requests, wallet_balances, customer_orders, order_events, cash_drawer, cash_drawer_movements, order_settings IN ACCESS EXCLUSIVE MODE');
     const archiveId=crypto.randomUUID();
     const archived=await client.query(
-      "INSERT INTO launch_archives(id,transactions,adjustments,cashier_requests,wallets) "+
+      "INSERT INTO launch_archives(id,transactions,adjustments,cashier_requests,wallets,orders,drawer_state,drawer_movements) "+
       "SELECT $1,"+
       "(SELECT COALESCE(jsonb_agg(to_jsonb(t)),'[]'::jsonb) FROM transactions t),"+
       "(SELECT COALESCE(jsonb_agg(to_jsonb(a)),'[]'::jsonb) FROM adjustments a),"+
       "(SELECT COALESCE(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM cashier_requests r),"+
-      "(SELECT COALESCE(jsonb_agg(to_jsonb(w)),'[]'::jsonb) FROM wallet_balances w) "+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(w)),'[]'::jsonb) FROM wallet_balances w),"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(o)-'qr_image'),'[]'::jsonb) FROM customer_orders o),"+
+      "(SELECT to_jsonb(d) FROM cash_drawer d WHERE id=1),"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(m)),'[]'::jsonb) FROM cash_drawer_movements m) "+
       "RETURNING id,created_at",
       [archiveId]);
+    await client.query('DELETE FROM cash_drawer_movements');
+    await client.query('DELETE FROM order_events');
+    await client.query('DELETE FROM customer_orders');
+    await client.query('UPDATE cash_drawer SET enabled=false,balance_cents=0,updated_at=now()');
+    await client.query('UPDATE order_settings SET enabled=false');
     await client.query('DELETE FROM cashier_requests');
     await client.query('DELETE FROM transactions');
     await client.query('DELETE FROM adjustments');
     await client.query('UPDATE wallet_balances SET balance_cents=0,updated_at=now()');
     await client.query('COMMIT');
     res.json({ok:true,archiveId:archived.rows[0].id,archivedAt:archived.rows[0].created_at,
-      message:'Pre-launch transaction history, adjustments and float balances have been reset. Cashier logins and fee rates remain unchanged.'});
+      message:'Pre-launch transactions, QR orders, cash drawer, adjustments and floats reset. Cashier logins and rates retained; public customer orders disabled.'});
   }catch(e){await client.query('ROLLBACK');throw e;}
   finally{client.release();}
 });
@@ -229,7 +246,7 @@ app.post('/api/launch/reset',managerOnly,async(req,res)=>{
 app.get('/api/launch/archives/:id',managerOnly,async(req,res)=>{
   if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw error('Invalid archive ID.');
   const q=await db.query(
-    'SELECT id,created_at,transactions,adjustments,cashier_requests,wallets FROM launch_archives WHERE id=$1',
+    'SELECT id,created_at,transactions,adjustments,cashier_requests,wallets,orders,drawer_state,drawer_movements FROM launch_archives WHERE id=$1',
     [req.params.id]);
   if(!q.rows.length)throw error('Launch archive not found.',404);
   res.set('Content-Disposition','attachment; filename="cashverse-launch-archive.json"');
@@ -315,8 +332,13 @@ app.post('/api/transactions',async(req,res)=>{
       [id,q.provider,q.type,q.mode,status,q.amountCents,q.feeCents,q.walletCents,q.cashCents,q.floatDeltaCents,
         reference,notes,req.actor.id,req.actor.name,req.actor.role,verified,
         completed?req.actor.name:null]);
-    if(completed)await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
-      [q.floatDeltaCents,q.provider]);
+    if(completed){
+      // When the owner has initialized the physical cash drawer, all manual ledger
+      // completions update it atomically with the wallet balance.
+      await drawerChange(client,q.type,q.cashCents,req.actor.name,null,id);
+      await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
+        [q.floatDeltaCents,q.provider]);
+    }
     const receipt={id,status,approvalRequired:needsApproval,verifiedByCashier:verified,...q};
     if(keyed)await client.query('UPDATE cashier_requests SET receipt=$3 WHERE cashier_id=$1 AND request_id=$2',
       [req.actor.id,p.requestId,receipt]);
@@ -335,6 +357,7 @@ app.post('/api/transactions/:id/complete',managerOnly,async(req,res)=>{
     if(t.status!=='PENDING')throw error('Only pending transactions can be completed.');
     const w=await client.query('SELECT balance_cents FROM wallet_balances WHERE provider=$1 FOR UPDATE',[t.provider]);
     if(Number(w.rows[0].balance_cents)+Number(t.float_delta_cents)<0)throw error('Not enough '+t.provider+' float for this cash-in.');
+    await drawerChange(client,t.txn_type,Number(t.cash_cents),'Manager',null,t.id);
     await client.query('UPDATE wallet_balances SET balance_cents=balance_cents+$1,updated_at=now() WHERE provider=$2',
       [t.float_delta_cents,t.provider]);
     await client.query("UPDATE transactions SET status='COMPLETED',completed_at=now(),approved_by='Manager' WHERE id=$1",[t.id]);
@@ -470,7 +493,13 @@ async function init(){
     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS cashier_verified boolean NOT NULL DEFAULT false;"+
     "ALTER TABLE transactions ADD COLUMN IF NOT EXISTS approved_by text;"
   );
+  await initOrders(db);
+  await db.query(
+    "ALTER TABLE launch_archives ADD COLUMN IF NOT EXISTS orders jsonb NOT NULL DEFAULT '[]'::jsonb;"+
+    "ALTER TABLE launch_archives ADD COLUMN IF NOT EXISTS drawer_state jsonb NOT NULL DEFAULT '{}'::jsonb;"+
+    "ALTER TABLE launch_archives ADD COLUMN IF NOT EXISTS drawer_movements jsonb NOT NULL DEFAULT '[]'::jsonb;"
+  );
 }
 init().then(()=>app.listen(Number(process.env.PORT||3000),'0.0.0.0',
-  ()=>console.log('CASHVERSE v1.1 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
+  ()=>console.log('CASHVERSE v1.2 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
 
