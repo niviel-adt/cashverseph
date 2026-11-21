@@ -45,6 +45,7 @@
         <button class="nav-btn" data-page="wallets"><span>◈</span> Wallets</button>
         <button class="nav-btn" data-page="rates"><span>⚙</span> Rates</button>
         <button class="nav-btn" data-page="cashiers"><span>♙</span> Cashiers</button>
+        <button class="nav-btn" data-page="launch"><span>◇</span> Launch setup</button>
         <div class="nav-bottom"><small>For GCash and Maya agent bookkeeping only.</small></div>
       </nav>
       <main class="content">
@@ -227,6 +228,48 @@
               <div class="reset-buttons"><button class="btn primary" type="submit">Save new password</button><button class="btn outline" id="cancelResetBtn" type="button">Cancel</button></div>
             </form>
           </article>
+        </section>
+        <section class="page" id="page-launch" hidden>
+          <div class="page-top">
+            <div><div class="eyebrow">OWNER-ONLY LAUNCH SETUP</div><h1>Prepare a clean launch</h1>
+              <p>Archive test activity, clear old transaction records and set both wallet floats to zero before opening your store.</p></div>
+          </div>
+          <div class="form-grid">
+            <article class="panel">
+              <div class="panel-head"><h2>Current store data</h2>
+                <button class="text-btn" id="launchRefresh" type="button">Refresh</button></div>
+              <div class="summary-line"><span>Existing transactions</span><strong id="launchTransactions">—</strong></div>
+              <div class="summary-line"><span>Balance adjustments</span><strong id="launchAdjustments">—</strong></div>
+              <div class="summary-line"><span>GCash float</span><strong id="launchGcash">—</strong></div>
+              <div class="summary-line"><span>Maya float</span><strong id="launchMaya">—</strong></div>
+              <div class="summary-line"><span>Uploaded rate rules (kept)</span><strong id="launchRates">—</strong></div>
+              <div class="summary-line"><span>Cashier logins (kept)</span><strong id="launchCashiers">—</strong></div>
+              <div class="summary-line"><span>Previous reset archives</span><strong id="launchArchives">—</strong></div>
+              <div class="note"><strong>Important</strong><p>This does not delete your owner/cashier logins or uploaded service rates. It clears all test transactions, their earnings, cash-in/cash-out history, pending requests and balance adjustments, then sets GCash and Maya floats to ₱0.00.</p></div>
+            </article>
+            <article class="panel">
+              <h2>Launch reset</h2>
+              <p class="small">Complete these steps only once you are sure the data is test data, not real customer transactions.</p>
+              <div class="launch-steps">
+                <button class="btn outline full" id="downloadLaunchBackup" type="button">↓ 1. Download pre-launch records</button>
+                <p class="hint" id="launchBackupStatus">A JSON copy of the records is recommended before reset. The server also saves an archive when you reset.</p>
+                <form id="launchResetForm" class="stack">
+                  <div><label for="launchConfirm">2. Type RESET CASHVERSE</label>
+                    <input id="launchConfirm" type="text" required autocomplete="off" placeholder="RESET CASHVERSE"></div>
+                  <div><label for="launchPassword">3. Enter your current owner password</label>
+                    <input id="launchPassword" type="password" required autocomplete="current-password" placeholder="Owner password"></div>
+                  <label class="verify" for="launchBackupCheck">
+                    <input type="checkbox" id="launchBackupCheck" required>
+                    <span><strong>I downloaded the backup and understand this resets live records.</strong>
+                    <small>You can only recover previous records from the export or stored archive.</small></span>
+                  </label>
+                  <button type="submit" class="btn danger full" id="launchResetBtn">Clear test data and start fresh</button>
+                </form>
+              </div>
+              <div class="note"><strong>After reset</strong><p>Go to Wallets → enter your real opening GCash and Maya amounts. Check your rate table, then perform a pending test transaction before operating.</p></div>
+              <p class="small" id="launchArchiveStatus" aria-live="polite"></p>
+            </article>
+          </div>
         </section>
         <footer>© CASHVERSE v1.1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
       </main>
