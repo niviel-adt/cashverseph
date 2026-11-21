@@ -75,7 +75,8 @@ async function expireOrders(db){
   await db.query("UPDATE customer_orders SET status='EXPIRED',updated_at=now() "+
     "WHERE status IN ('NEW','RESERVED') AND expires_at<=now()");
   await db.query("UPDATE customer_orders SET qr_image=NULL,qr_mime=NULL "+
-    "WHERE created_at<now()-interval '14 days' AND status IN ('COMPLETED','REJECTED','EXPIRED')");
+    "WHERE (created_at<now()-interval '14 days' AND status IN ('COMPLETED','REJECTED','EXPIRED')) "+
+    "OR created_at<now()-interval '30 days'");
 }
 // Call while holding the cash_drawer row lock.
 async function holds(db,ignore=null){
