@@ -231,7 +231,7 @@ function wallet(dashboard, provider) {
   cookie=managerCookie;
   orderRows=await request('/api/orders');
   const walkInOrder=orderRows.find(o=>o.order_code===customerCashOut.orderCode);
-  assert.equal(walkInOrder.cash_cents,9000);
+  assert.equal(Number(walkInOrder.cash_cents),9000);
   await request('/api/orders/'+walkInOrder.id+'/claim',{});
   await request('/api/orders/'+walkInOrder.id+'/finish',{
     verified:true,cashConfirmed:true,reference:'QR-CO-001'
