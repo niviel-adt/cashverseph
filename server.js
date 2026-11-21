@@ -164,6 +164,78 @@ app.post('/api/settings',managerOnly,async(req,res)=>{
   await db.query("UPDATE app_settings SET cashier_approval_required=$1 WHERE key='main'",[enabled]);
   res.json({cashierApprovalRequired:enabled});
 });
+// PRE-LAUNCH SETUP: this keeps accounts and fee rates unchanged.
+// A reset archives existing records transactionally before clearing test ledger data.
+app.get('/api/launch/summary',managerOnly,async(req,res)=>{
+  const result=await db.query(
+    "SELECT (SELECT COUNT(*)::int FROM transactions) AS transactions,"+
+    "(SELECT COUNT(*)::int FROM adjustments) AS adjustments,"+
+    "(SELECT COUNT(*)::int FROM cashiers) AS cashiers,"+
+    "(SELECT COUNT(*)::int FROM fee_rates) AS rates,"+
+    "(SELECT COUNT(*)::int FROM launch_archives) AS archive_count,"+
+    "(SELECT COALESCE(jsonb_agg(jsonb_build_object('provider',provider,'balanceCents',balance_cents)), '[]'::jsonb) FROM wallet_balances) AS wallets"
+  );
+  res.json(result.rows[0]);
+});
+
+app.get('/api/launch/backup',managerOnly,async(req,res)=>{
+  const q=await db.query(
+    "SELECT (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.created_at),'[]'::jsonb) FROM transactions t) AS transactions,"+
+    "(SELECT COALESCE(jsonb_agg(to_jsonb(a) ORDER BY a.created_at),'[]'::jsonb) FROM adjustments a) AS adjustments,"+
+    "(SELECT COALESCE(jsonb_agg(to_jsonb(w) ORDER BY w.provider),'[]'::jsonb) FROM wallet_balances w) AS wallets,"+
+    "(SELECT COALESCE(jsonb_agg(to_jsonb(r) ORDER BY r.provider,r.txn_type,r.min_cents),'[]'::jsonb) FROM fee_rates r) AS fee_rates,"+
+    "(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'username',username,'display_name',display_name,'active',active,'created_at',created_at)),'[]'::jsonb) FROM cashiers) AS cashier_profiles"
+  );
+  res.set('Content-Disposition','attachment; filename="cashverse-prelaunch-export.json"');
+  res.json({format:'cashverse-v1.1-prelaunch',exportedAt:new Date().toISOString(),
+    note:'Record export for audit/reference; not an automatically restorable PostgreSQL backup. No login credentials included.',
+    ...q.rows[0]});
+});
+
+app.post('/api/launch/reset',managerOnly,async(req,res)=>{
+  const data=req.body || {};
+  if(data.confirmation!=='RESET CASHVERSE' || data.backupAcknowledged!==true)
+    throw error('Download your backup and type RESET CASHVERSE to confirm.');
+  if(typeof data.password!=='string'||data.password.length>200||
+    !crypto.timingSafeEqual(secureHash(data.password),secureHash(process.env.OWNER_PASSWORD)))
+    throw error('Current owner password is incorrect.',403);
+
+  const client=await db.connect();
+  try{
+    await client.query('BEGIN');
+    // Exclude concurrent writers until the complete snapshot and reset have committed.
+    await client.query('LOCK TABLE transactions, adjustments, cashier_requests, wallet_balances IN ACCESS EXCLUSIVE MODE');
+    const archiveId=crypto.randomUUID();
+    const archived=await client.query(
+      "INSERT INTO launch_archives(id,transactions,adjustments,cashier_requests,wallets) "+
+      "SELECT $1,"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(t)),'[]'::jsonb) FROM transactions t),"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(a)),'[]'::jsonb) FROM adjustments a),"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(r)),'[]'::jsonb) FROM cashier_requests r),"+
+      "(SELECT COALESCE(jsonb_agg(to_jsonb(w)),'[]'::jsonb) FROM wallet_balances w) "+
+      "RETURNING id,created_at",
+      [archiveId]);
+    await client.query('DELETE FROM cashier_requests');
+    await client.query('DELETE FROM transactions');
+    await client.query('DELETE FROM adjustments');
+    await client.query('UPDATE wallet_balances SET balance_cents=0,updated_at=now()');
+    await client.query('COMMIT');
+    res.json({ok:true,archiveId:archived.rows[0].id,archivedAt:archived.rows[0].created_at,
+      message:'Pre-launch transaction history, adjustments and float balances have been reset. Cashier logins and fee rates remain unchanged.'});
+  }catch(e){await client.query('ROLLBACK');throw e;}
+  finally{client.release();}
+});
+
+app.get('/api/launch/archives/:id',managerOnly,async(req,res)=>{
+  if(!/^[0-9a-f-]{36}$/i.test(req.params.id))throw error('Invalid archive ID.');
+  const q=await db.query(
+    'SELECT id,created_at,transactions,adjustments,cashier_requests,wallets FROM launch_archives WHERE id=$1',
+    [req.params.id]);
+  if(!q.rows.length)throw error('Launch archive not found.',404);
+  res.set('Content-Disposition','attachment; filename="cashverse-launch-archive.json"');
+  res.json({format:'cashverse-v1.1-launch-archive',...q.rows[0]});
+});
+
 async function rate(client,provider,type,amount){
   const q=await client.query(
     "SELECT fee_cents FROM fee_rates WHERE provider=$1 AND txn_type=$2 AND min_cents<=$3 AND max_cents>=$3 "+
@@ -384,6 +456,10 @@ async function init(){
     "created_at timestamptz NOT NULL DEFAULT now());"+
     "CREATE TABLE IF NOT EXISTS cashier_requests(cashier_id text NOT NULL REFERENCES cashiers(id),"+
     "request_id uuid NOT NULL,fingerprint text NOT NULL,receipt jsonb,PRIMARY KEY(cashier_id,request_id));"+
+    "CREATE TABLE IF NOT EXISTS launch_archives ("+
+    "id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(),"+
+    "transactions jsonb NOT NULL,adjustments jsonb NOT NULL,"+
+    "cashier_requests jsonb NOT NULL,wallets jsonb NOT NULL);"+
     "CREATE TABLE IF NOT EXISTS app_settings ("+
     "key text PRIMARY KEY, cashier_approval_required boolean NOT NULL DEFAULT false);"+
     "INSERT INTO app_settings(key) VALUES('main') ON CONFLICT(key) DO NOTHING;"+
