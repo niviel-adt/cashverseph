@@ -32,7 +32,7 @@
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark small-mark">₱</span>
-        <span><strong>CASHVERSE</strong><small><span id="roleLabel">Store Manager</span> <span class="version">V1.1</span></small></span>
+        <span><strong>CASHVERSE</strong><small><span id="roleLabel">Store Manager</span> <span class="version">V1.2</span></small></span>
       </div>
       <div class="top-right"><span class="live-dot"></span> <span id="userLabel">Store ledger</span> <button class="btn outline tiny" id="logoutBtn">Log out</button></div>
     </header>
@@ -40,6 +40,7 @@
       <nav class="nav" aria-label="Main navigation">
         <button class="nav-btn active" data-page="overview"><span>◫</span> Overview</button>
         <button class="nav-btn" data-page="transaction"><span>＋</span> New transaction</button>
+        <button class="nav-btn" data-page="orders"><span>♧</span> QR orders <span id="orderBadge" class="order-badge" hidden>0</span></button>
         <button class="nav-btn" data-page="history"><span>▤</span> History</button>
         <button class="nav-btn" data-page="report"><span>▥</span> Daily report</button>
         <button class="nav-btn" data-page="wallets"><span>◈</span> Wallets</button>
@@ -134,6 +135,101 @@
               <div class="note"><strong>Safety check</strong><p>CASHVERSE does not send or receive money. It only records transactions you process using the real GCash/Maya app.</p></div>
             </article>
           </div>
+        </section>
+
+        <section class="page orders-page" id="page-orders" hidden>
+          <div class="page-top">
+            <div><div class="eyebrow">CASHVERSE V1.2</div><h1>QR cash orders</h1>
+              <p>Receive customer cash-in requests and cash-out orders, including advance pickup reservations.</p></div>
+            <button type="button" class="btn outline" id="ordersRefreshBtn">↻ Refresh orders</button>
+          </div>
+          <div id="ordersToast" class="order-toast" role="status" aria-live="polite" hidden></div>
+          <div class="order-kpis">
+            <div class="panel"><small>New requests</small><strong id="ordersNewCount">0</strong></div>
+            <div class="panel"><small>Processing</small><strong id="ordersProcessingCount">0</strong></div>
+            <div class="panel"><small>Waiting manager</small><strong id="ordersApprovalsCount">0</strong></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <div><h2>Order queue</h2><p class="hint">Refreshes automatically every 8 seconds while this tab is open.</p></div>
+              <label class="order-sound-label" for="ordersSound"><input type="checkbox" id="ordersSound"> Sound alerts</label>
+            </div>
+            <div class="order-filters" role="group" aria-label="Filter cash orders">
+              <button type="button" class="active" data-order-filter="open">Open orders</button>
+              <button type="button" data-order-filter="all">All</button>
+              <button type="button" data-order-filter="CASH_IN">Cash-in</button>
+              <button type="button" data-order-filter="CASH_OUT">Cash-out</button>
+              <button type="button" data-order-filter="PICKUP">Pickup</button>
+            </div>
+            <div id="ordersList" class="orders-list"><p class="empty">No customer orders yet.</p></div>
+          </div>
+          <article class="panel" id="orderFinishPanel" hidden>
+            <div class="panel-head"><h2 id="orderFinishTitle">Verify order</h2><button class="text-btn" id="orderFinishCancel" type="button">Close</button></div>
+            <p class="hint">CASHVERSE cannot verify transfers. Check the official GCash/Maya agent app independently before confirming. For cash-out, do not release physical cash before all required approvals.</p>
+            <form id="orderFinishForm" class="stack">
+              <input id="orderFinishId" type="hidden">
+              <input id="orderFinishAction" type="hidden">
+              <div><label for="orderFinishRef">Official wallet transaction reference</label>
+                <input id="orderFinishRef" maxlength="70" required placeholder="Reference seen inside the official wallet app"></div>
+              <label class="verify"><input id="orderFinishVerified" type="checkbox" required>
+                <span><strong>Verified the transfer using the official provider app.</strong><small>A screenshot or customer's typed reference alone is not sufficient.</small></span></label>
+              <label class="verify"><input id="orderFinishCash" type="checkbox" required>
+                <span><strong id="orderCashConfirmLabel">Physical cash is confirmed.</strong>
+                  <small id="orderCashConfirmHint">Follow the correct provider and counter workflow.</small></span></label>
+              <button class="btn primary" type="submit" id="orderFinishSubmit">Complete verified order</button>
+            </form>
+          </article>
+          <section class="manager-orders-only">
+            <div class="form-grid">
+              <article class="panel">
+                <h2>Customer order QR</h2>
+                <p class="small muted">Print this QR code at your counter. Scanning opens the public CASHVERSE request form; no customer login is needed.</p>
+                <img class="store-order-qr" src="/api/public/orders/qr.svg" alt="Store customer order QR code">
+                <div><a class="btn outline inline" href="/api/public/orders/qr.svg" download="cashverse-customer-orders.svg">Download QR</a>
+                <a class="btn outline inline" href="/order.html" target="_blank" rel="noopener">Open customer page</a></div>
+                <p class="hint">Customer orders remain disabled until you enable them below.</p>
+              </article>
+              <article class="panel">
+                <h2>Public order settings</h2>
+                <form id="orderSettingsForm" class="stack">
+                  <label class="verify" for="orderPublicEnabled"><input id="orderPublicEnabled" type="checkbox">
+                    <span><strong>Accept new customer QR orders</strong><small>Leave off until your rate CSV and opening cash drawer have been checked.</small></span></label>
+                  <div><label for="orderCashoutLimit">Cash-out maximum per order (₱)</label>
+                    <input id="orderCashoutLimit" type="number" min="0.01" max="50000" step="0.01" value="20000" required></div>
+                  <button class="btn primary" type="submit">Save customer order settings</button>
+                </form>
+              </article>
+            </div>
+            <div class="form-grid">
+              <article class="panel">
+                <h2>Physical cash drawer</h2>
+                <p class="small muted">Tracks physical cash and blocks cash-outs that exceed unreserved cash.</p>
+                <div class="summary-line"><span>Cash balance</span><strong id="drawerBalance">—</strong></div>
+                <div class="summary-line"><span>Reserved for pickups</span><strong id="drawerHeld">—</strong></div>
+                <div class="summary-line"><span>Available cash</span><strong id="drawerAvailable">—</strong></div>
+                <form id="drawerForm" class="stack">
+                  <label for="drawerAmount">Amount to add or deduct (₱)</label>
+                  <input id="drawerAmount" type="number" inputmode="decimal" step="0.01" required placeholder="e.g. 5000 or -250">
+                  <label for="drawerReason">Reason</label>
+                  <input id="drawerReason" maxlength="160" required placeholder="Opening physical cash / replenishment">
+                  <button class="btn primary" type="submit" id="drawerButton">Set opening cash</button>
+                  <p class="hint" id="drawerHint">Initialize before accepting public orders. Future completed transactions adjust this drawer automatically.</p>
+                </form>
+              </article>
+              <article class="panel">
+                <h2>Official wallet receiving QR</h2>
+                <p class="small muted">Optional: upload your store's authorized receiving QR, so your cashier can display it while processing a walk-in cash-out. It is visible to logged-in staff only, not the public order page.</p>
+                <form id="storeQrForm" class="stack">
+                  <label for="storeQrProvider">Wallet</label>
+                  <select id="storeQrProvider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select>
+                  <label for="storeQrFile">QR screenshot (PNG/JPG/WebP)</label>
+                  <input id="storeQrFile" type="file" accept="image/png,image/jpeg,image/webp" required>
+                  <button type="submit" class="btn primary">Save store receiving QR</button>
+                </form>
+                <div class="note"><strong>Provider warning</strong><p>Only display a QR that your provider authorizes for the intended transaction type. It does not verify payment automatically.</p></div>
+              </article>
+            </div>
+          </section>
         </section>
 
         <section class="page" id="page-history" hidden>
@@ -271,7 +367,7 @@
             </article>
           </div>
         </section>
-        <footer>© CASHVERSE v1.1 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
+        <footer>© CASHVERSE v1.2 · Simple tools for Philippine stores · Ledger only, not a payment gateway.</footer>
       </main>
     </div>
   </div>
