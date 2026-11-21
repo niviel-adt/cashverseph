@@ -22,6 +22,7 @@ const timePh = d => new Date(d).toLocaleString('en-PH', {
 let historyRows = [];
 let quoteSequence = 0;
 let quoteTimer;
+let launchBackupDownloaded=false;
 let currentRole = null;
 let currentUsername = null;
 
@@ -65,6 +66,7 @@ function showPage(page) {
   document.querySelectorAll('.page').forEach(el=>{el.hidden=el.id!=='page-'+page;});
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
   if(page==='transaction') updateQuote();
+  if(page==='launch' && currentRole==='manager') refreshLaunchSummary().catch(e=>notify(e.message,true));
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function table(headings,rows) {
@@ -198,8 +200,41 @@ async function refreshSettings(){
   const data=await api('/api/settings');
   byId('requireApproval').checked=data.cashierApprovalRequired;
 }
+async function refreshLaunchSummary(){
+  if(currentRole!=='manager')return;
+  const s=await api('/api/launch/summary');
+  byId('launchTransactions').textContent=s.transactions;
+  byId('launchAdjustments').textContent=s.adjustments;
+  byId('launchCashiers').textContent=s.cashiers;
+  byId('launchRates').textContent=s.rates;
+  byId('launchArchives').textContent=s.archive_count;
+  const wallets=Object.fromEntries(s.wallets.map(x=>[x.provider,Number(x.balanceCents)]));
+  byId('launchGcash').textContent=money(wallets.GCASH);
+  byId('launchMaya').textContent=money(wallets.MAYA);
+}
+async function downloadLaunchBackup(){
+  const btn=byId('downloadLaunchBackup');
+  btn.disabled=true;
+  try{
+    const data=await api('/api/launch/backup');
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='cashverse-prelaunch-'+datePh()+'.json';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    launchBackupDownloaded=true;
+    byId('launchBackupStatus').textContent='Download initiated. Verify the JSON file was saved before proceeding.';
+    notify('Pre-launch record export prepared. Check your Downloads folder.');
+  }catch(e){notify(e.message,true);}
+  finally{btn.disabled=false;}
+}
+
 async function loadAll(){
-  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates(),refreshCashiers(),refreshSettings()]);
+  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates(),refreshCashiers(),refreshSettings(),refreshLaunchSummary()]);
 }
 async function startSession(me){
   currentRole=me.role;
@@ -316,6 +351,41 @@ function wire(){
   });
   byId('loadReportBtn').addEventListener('click',async()=>{
     try{await refreshReport();clearNotice();}catch(e){notify(e.message,true);}
+  });
+  byId('launchRefresh').addEventListener('click',async()=>{
+    try{await refreshLaunchSummary();notify('Launch data totals refreshed.');}
+    catch(e){notify(e.message,true);}
+  });
+  byId('downloadLaunchBackup').addEventListener('click',downloadLaunchBackup);
+  byId('launchResetForm').addEventListener('submit',async e=>{
+    e.preventDefault();
+    if(!launchBackupDownloaded){
+      notify('Download the pre-launch record export first.',true);
+      return;
+    }
+    if(byId('launchConfirm').value!=='RESET CASHVERSE'){
+      notify('Type RESET CASHVERSE exactly to confirm.',true);
+      return;
+    }
+    if(!window.confirm('FINAL CONFIRMATION: Clear all recorded transactions and adjustments, and reset both wallet floats to ₱0.00? This is a destructive production action. Cashier accounts and rate rules remain.')){
+      return;
+    }
+    const btn=byId('launchResetBtn');btn.disabled=true;
+    try{
+      const result=await api('/api/launch/reset','POST',{
+        password:byId('launchPassword').value,
+        confirmation:byId('launchConfirm').value,
+        backupAcknowledged:byId('launchBackupCheck').checked
+      });
+      byId('launchResetForm').reset();
+      launchBackupDownloaded=false;
+      byId('launchBackupStatus').textContent='Download another backup before any future reset.';
+      byId('launchArchiveStatus').textContent='Archived copy ID: '+result.archiveId+
+        ' — saved in PostgreSQL. Download your JSON file for off-site record keeping.';
+      await loadAll();
+      notify('Clean launch baseline created: transaction and adjustment records cleared, both floats set to ₱0.00. Logins and uploaded rates were kept.');
+    }catch(err){notify(err.message,true);}
+    finally{btn.disabled=false;byId('launchPassword').value='';}
   });
   byId('cashierForm').addEventListener('submit',async e=>{
     e.preventDefault();
