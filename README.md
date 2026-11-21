@@ -1,4 +1,4 @@
-# CASHVERSE v1.1
+# CASHVERSE v1.2
 
 A simple browser-based **GCash and Maya cash-in/cash-out ledger** for Philippine sari-sari stores. English UI; responsive on phones, tablets, and computers.
 
@@ -168,3 +168,40 @@ The reset is **not automatic** on deploy, and launching or restarting Railway do
 Because a reset affects current business data, verify other staff are not actively recording transactions while it runs. The reset uses a PostgreSQL transaction and exclusive locks so incomplete cleanup is rolled back.
 
 **Security:** Prefer a long, unique owner password instead of a six-digit PIN for an internet-accessible application.
+
+
+## V1.2 QR customer orders
+
+**Customer page:** \`https://cashverse-web-production.up.railway.app/order.html\`
+
+V1.2 adds three customer journeys on **one public webpage**: cash-in with receiving QR upload, walk-in cash-out, and cash-out reservation with a chosen pickup time. A public QR-code SVG for printing is available at \`/api/public/orders/qr.svg\`. The customer receives an unpredictable order tracking link and an order number. No customer login is required. Customer orders are **disabled by default** until the manager prepares the cash drawer, reviews uploaded rate rules and explicitly enables the feature.
+
+### Owner and manager setup
+1. Open CASHVERSE as **owner → QR orders**.
+2. Set your actual opening cash drawer amount, with a reason. From this point onward completed manual and QR transactions update the same drawer automatically.
+3. Review uploaded GCash/Maya fee rates and configure a maximum cash-out order amount (default ₱20,000; hard limit ₱50,000).
+4. Optionally upload your store's **authorized** receiving QR per wallet. Only logged-in staff can view this uploaded QR. It is not displayed automatically to unverified online customers.
+5. Download or print the store customer-order QR; display it at the counter or share the customer request URL.
+6. Enable **Accept new customer QR orders** only when the store is ready. Disabling the switch prevents **new** submissions but does not change existing orders.
+
+### Cash-in requests
+Customers choose a wallet, amount, fee method, and upload their own receiving QR screenshot. The cashier starts the order, collects cash and uses the provider's official app to transfer to the verified recipient. Only after confirming the transaction reference and the physical cash does the order complete. GCash/Maya float decreases, the physical drawer increases, and a completed transaction with fees appears in the existing ledger.
+
+### Walk-in cash-out
+The customer requests an amount and receives an order number; no customer payment is automatically collected. The cashier finds the order, checks the order code, follows an authorized official-provider procedure to receive and verify funds, and releases physical cash when authorized. On completion the wallet ledger increases and the cash drawer decreases. A screenshot or customer-provided reference alone is not proof of payment.
+
+### Advance cash-out pickup
+Customer chooses a pickup date/time (Philippine time, 30 minutes to 7 days ahead). **No advance payment is requested**. The manager must accept the reservation, atomically verifying enough unreserved physical cash and holding the payout amount. Staff verifies the order code when the customer arrives, checks the official incoming wallet transfer, then releases cash. Reservations expire one hour after their pickup time if unclaimed. Expired/rejected reservations release the hold; they do not affect wallet float or the cash balance.
+
+### Approval and permissions
+Cashier accounts get a mobile **QR orders** tab plus **New transaction**. They can claim walk-in and accepted pickup orders, view receiving QR screenshots, verify the official transfer and submit a completion. If the existing cashier manager-approval setting is on, their verification moves orders to **Awaiting manager approval** and **does not update wallet or cash** until the manager independently confirms. Manager-only actions include accepting pickup reservations, changing cash drawer/rate/owner settings, and approving pending transactions.
+
+### Notifications, safety, and scope
+- The staff order queue and badge refresh approximately every 8 seconds while the app is open and visible; optional sound can be enabled with a user gesture. **OS/browser push notifications while the app is closed are not included**.
+- Customer QR screenshots are stored as private PostgreSQL image bytes, not public files. Only authenticated staff may view them. Uploads are resized in-browser and capped at 600 KB after encoding; only PNG/JPG/WebP signatures are permitted.
+- QR images are deleted from completed/rejected/expired orders after 14 days; active, long-stale uploads are eventually purged.
+- Public requests are rate-limited, and order submissions have unique request IDs; completed QR transfers cannot reuse a previously completed wallet reference.
+- CASHVERSE is not a payment gateway, does not confirm actual GCash/Maya wallet transfers automatically, and must never collect wallet PINs, OTPs or passwords.
+- The **Launch setup** manager screen now exports and archives order metadata and cash drawer movement records, clears old QR requests, disables new public requests, and resets the cash drawer while preserving manager/cashier accounts and rate tables. Customer-uploaded QR images are omitted from exported archives for privacy.
+
+The application should be pilot-tested with small, manually verified transactions before relying on the cash drawer ledger for operations. A JSON export is **not a database backup**; arrange independent Railway/PostgreSQL backups and review your provider's authorization requirements.
