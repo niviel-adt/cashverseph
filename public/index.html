@@ -337,12 +337,14 @@
                 <button class="text-btn" id="launchRefresh" type="button">Refresh</button></div>
               <div class="summary-line"><span>Existing transactions</span><strong id="launchTransactions">—</strong></div>
               <div class="summary-line"><span>Balance adjustments</span><strong id="launchAdjustments">—</strong></div>
+              <div class="summary-line"><span>QR cash-in / cash-out orders</span><strong id="launchOrders">—</strong></div>
+              <div class="summary-line"><span>Physical cash drawer</span><strong id="launchCashDrawer">—</strong></div>
               <div class="summary-line"><span>GCash float</span><strong id="launchGcash">—</strong></div>
               <div class="summary-line"><span>Maya float</span><strong id="launchMaya">—</strong></div>
               <div class="summary-line"><span>Uploaded rate rules (kept)</span><strong id="launchRates">—</strong></div>
               <div class="summary-line"><span>Cashier logins (kept)</span><strong id="launchCashiers">—</strong></div>
               <div class="summary-line"><span>Previous reset archives</span><strong id="launchArchives">—</strong></div>
-              <div class="note"><strong>Important</strong><p>This does not delete your owner/cashier logins or uploaded service rates. It clears all test transactions, their earnings, cash-in/cash-out history, pending requests and balance adjustments, then sets GCash and Maya floats to ₱0.00.</p></div>
+              <div class="note"><strong>Important</strong><p>This does not delete your owner/cashier logins or uploaded service rates. It clears test transactions, QR cash orders (and uploaded customer QR images), physical cash drawer records, earnings and adjustments. GCash, Maya and drawer balances return to ₱0.00; public QR ordering is switched off.</p></div>
             </article>
             <article class="panel">
               <h2>Launch reset</h2>
@@ -363,7 +365,7 @@
                   <button type="submit" class="btn danger full" id="launchResetBtn">Clear test data and start fresh</button>
                 </form>
               </div>
-              <div class="note"><strong>After reset</strong><p>Go to Wallets → enter your real opening GCash and Maya amounts. Check your rate table, then perform a pending test transaction before operating.</p></div>
+              <div class="note"><strong>After reset</strong><p>Go to Wallets → enter actual opening GCash/Maya floats. On QR orders → initialize your physical cash drawer, review fees and cash-out limits, then explicitly enable public requests.</p></div>
               <p class="small" id="launchArchiveStatus" aria-live="polite"></p>
             </article>
           </div>
