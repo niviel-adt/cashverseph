@@ -156,7 +156,54 @@ function wallet(dashboard, provider) {
   await request('/api/logout',{});
   assert.equal((await request('/api/me')).loggedIn,false);
   cookie=managerCookie;
+  // A cashier is never allowed to archive or reset the store.
+  cookie='';
+  await request('/api/login',{username:'cashier_test',password:'new-cashier-password-123'});
+  await forbidden('/api/launch/summary');
+  await forbidden('/api/launch/backup');
+  await forbidden('/api/launch/reset','POST',{
+    confirmation:'RESET CASHVERSE',password:process.env.OWNER_PASSWORD,backupAcknowledged:true
+  });
+  await request('/api/logout',{});
+  cookie=managerCookie;
+
+  // Owner can download a record export and reset test activity while retaining settings/accounts/rates.
+  const before=await request('/api/launch/summary');
+  assert.ok(before.transactions>=5);
+  assert.ok(before.adjustments>=1);
+  const backup=await request('/api/launch/backup');
+  assert.equal(backup.format,'cashverse-v1.1-prelaunch');
+  assert.ok(backup.transactions.length>=5);
+  assert.equal(backup.cashier_profiles.length,1);
+  assert.ok(!JSON.stringify(backup).includes('password_hash'));
+  const missingConsent=await fetch(BASE+'/api/launch/reset',{
+    method:'POST',headers:{Cookie:cookie,'Content-Type':'application/json'},
+    body:JSON.stringify({password:process.env.OWNER_PASSWORD,confirmation:'WRONG',backupAcknowledged:true})
+  });
+  assert.equal(missingConsent.status,400);
+
+  const reset=await request('/api/launch/reset',{
+    password:process.env.OWNER_PASSWORD,confirmation:'RESET CASHVERSE',backupAcknowledged:true
+  });
+  assert.equal(reset.ok,true);
+  const archive=await request('/api/launch/archives/'+reset.archiveId);
+  assert.ok(archive.transactions.length>=5);
+  const after=await request('/api/launch/summary');
+  assert.equal(after.transactions,0);
+  assert.equal(after.adjustments,0);
+  assert.equal(after.rates,5);
+  assert.equal(after.cashiers,1);
+  assert.equal(after.wallets.every(w=>Number(w.balanceCents)===0),true);
+  assert.equal(after.archive_count,before.archive_count+1);
+  assert.equal((await request('/api/transactions')).length,0);
+  assert.equal(wallet(await request('/api/dashboard'),'GCASH'),0);
+  const postReset=await request('/api/transactions',{
+    provider:'GCASH',type:'CASH_OUT',mode:'DEDUCT',amount:'100',verified:true
+  });
+  assert.equal(postReset.status,'COMPLETED');
+  assert.equal(wallet(await request('/api/dashboard'),'GCASH'),10000);
+
   await request('/api/logout',{});
   assert.equal((await request('/api/me')).loggedIn,false);
-  console.log('CASHVERSE v1.1 smoke tests passed: role access, cashier creation, approval, account disabling, password reset, floats and reporting.');
+  console.log('CASHVERSE v1.1 smoke tests passed: role access, cashier creation, approval, account disabling, password reset, floats, reporting, launch backup and reset.');
 })().catch(err=>{console.error(err);process.exitCode=1;});
