@@ -8,7 +8,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const {toCents, calculate} = require('./lib/money');
 const {makePasswordHash,verifyPassword} = require('./lib/passwords');
-const {publicRoutes,staffRoutes,initOrders,drawerChange} = require('./orders');
+const {publicRoutes,staffRoutes,initOrders,drawerChange,expireOrders} = require('./orders');
 
 for(const k of ['DATABASE_URL','OWNER_PASSWORD','SESSION_SECRET'])
   if(!process.env[k]) throw Error('Missing environment variable: '+k);
@@ -500,6 +500,11 @@ async function init(){
     "ALTER TABLE launch_archives ADD COLUMN IF NOT EXISTS drawer_movements jsonb NOT NULL DEFAULT '[]'::jsonb;"
   );
 }
-init().then(()=>app.listen(Number(process.env.PORT||3000),'0.0.0.0',
-  ()=>console.log('CASHVERSE v1.2 is running'))).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
+init().then(()=>{
+  app.listen(Number(process.env.PORT||3000),'0.0.0.0',
+    ()=>console.log('CASHVERSE v1.2 is running'));
+  // Background retention cleanup. Also runs opportunistically on order-list requests.
+  const timer=setInterval(()=>expireOrders(db).catch(e=>console.warn('Order cleanup failed:',e.message)),3600000);
+  timer.unref();
+}).catch(e=>{console.error('Database setup failed',e);process.exit(1);});
 
