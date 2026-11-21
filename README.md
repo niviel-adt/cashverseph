@@ -148,3 +148,23 @@ The manager's overview and history automatically refresh approximately every **1
 - Never collect wallet OTPs, PINs, or customer wallet passwords.
 - For production financial use, set up **regular PostgreSQL backups**, validate agent fee policies, and verify transaction references in official provider apps.
 - Historical v1 transaction and wallet data are preserved by additive database migrations.
+
+## Preparing the live store for launch
+
+A manager-only **Launch setup** page allows you to create a clean store baseline.
+
+1. Log in as the owner and open **Launch setup**.
+2. Review the current record counts and recorded GCash/Maya float balances.
+3. Choose **Download pre-launch records**. Keep the downloaded JSON file private; it can contain transaction references or customer-related notes.
+4. Check the download exists in your device's Downloads folder.
+5. Type `RESET CASHVERSE`, enter your current owner password, acknowledge the backup and approve the final confirmation.
+6. The app snapshots the previous transactions, adjustments, pending cashier request IDs and wallet balances in an internal `launch_archives` table.
+7. It clears the transaction and adjustment tables, clears pending cashier request records, and sets **GCash and Maya floats to ₱0.00**.
+8. **Cashier accounts, owner credentials, uploaded service rate tables and manager approval settings are retained.**
+9. Manually enter your actual opening balances under **Wallets** and verify the configured rates.
+
+The reset is **not automatic** on deploy, and launching or restarting Railway does not clear business data. This action must be explicitly submitted by an authenticated manager with a current owner password. It is intended for **test data only**; do not delete real customer records without evaluating your retention obligations. The downloaded JSON is a record export, **not a restorable PostgreSQL database backup**. Set up separate database backups before live transactions. The internal PostgreSQL archive is protected by the same database, and therefore is not disaster-proof. An archive can be downloaded later using `GET /api/launch/archives/{archiveId}` while logged in as manager.
+
+Because a reset affects current business data, verify other staff are not actively recording transactions while it runs. The reset uses a PostgreSQL transaction and exclusive locks so incomplete cleanup is rolled back.
+
+**Security:** Prefer a long, unique owner password instead of a six-digit PIN for an internet-accessible application.
