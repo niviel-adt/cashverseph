@@ -206,6 +206,8 @@ async function refreshLaunchSummary(){
   const s=await api('/api/launch/summary');
   byId('launchTransactions').textContent=s.transactions;
   byId('launchAdjustments').textContent=s.adjustments;
+  byId('launchOrders').textContent=s.customer_orders;
+  byId('launchCashDrawer').textContent=money(s.cash_drawer_cents);
   byId('launchCashiers').textContent=s.cashiers;
   byId('launchRates').textContent=s.rates;
   byId('launchArchives').textContent=s.archive_count;
