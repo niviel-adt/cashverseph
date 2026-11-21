@@ -1,4 +1,4 @@
-name: CASHVERSE v1 checks
+name: CASHVERSE v1.2 verification
 
 on:
   push:
@@ -32,9 +32,9 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Check JavaScript syntax
         run: npm run check
-      - name: Test transaction amounts and fee calculations
+      - name: Test financial calculations and password hashing
         run: npm test
-      - name: Test working API against PostgreSQL
+      - name: Integration test V1.2 orders, cash drawer, approvals, and launch reset
         env:
           DATABASE_URL: postgresql://postgres:smoke_password@127.0.0.1:5432/cashverse
           OWNER_PASSWORD: test-owner-password-12345
