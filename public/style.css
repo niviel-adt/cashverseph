@@ -131,3 +131,55 @@ footer{font-size:11px;color:#9baaa4;margin-top:40px;text-align:center;padding:12
 .launch-steps .verify input{accent-color:#9b322f}
 #launchArchiveStatus{margin:15px 0 0;overflow-wrap:anywhere}
 #launchBackupStatus{margin:0 0 5px}
+
+
+/* CASHVERSE v1.2 QR order management */
+.order-badge{background:#c44833;color:#fff;border-radius:999px;padding:2px 7px;margin-left:auto;font-size:11px;font-weight:800}
+.orders-page .order-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+.orders-page .order-kpis .panel{display:flex;flex-direction:column;gap:7px;padding:18px;min-height:88px}
+.orders-page .order-kpis small{color:var(--muted);font-size:11px}
+.orders-page .order-kpis strong{font-size:26px;font-weight:800}
+.orders-page .order-sound-label{font-size:12px;display:flex;gap:6px;align-items:center;white-space:nowrap}
+.orders-page .order-sound-label input{width:auto}
+.order-filters{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 21px}
+.order-filters button{border:1px solid #d4e3d9;background:#f7fbf8;border-radius:999px;padding:9px 12px;color:#406453;font-weight:700;font-size:12px}
+.order-filters button.active{background:#166b4b;border-color:#166b4b;color:#fff}
+.orders-list{display:grid;gap:13px}
+.customer-order{background:#fbfdfb;border:1px solid #dce8df;border-radius:14px;padding:18px}
+.customer-order-head{display:flex;align-items:start;justify-content:space-between;gap:10px;margin-bottom:15px}
+.customer-order-head strong{font-size:17px;letter-spacing:.03em}
+.customer-order-head .order-service{display:block;font-size:12px;color:#60736b;margin-top:3px}
+.customer-order-values{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;background:#f0f7f2;border-radius:10px;padding:14px}
+.customer-order-values div{display:grid;gap:4px}
+.customer-order-values small{font-size:10px;color:#617569}
+.customer-order-values strong{font-size:15px;word-break:break-word}
+.customer-order-meta{display:flex;flex-wrap:wrap;gap:8px 15px;margin:12px 0;color:#60736b;font-size:11px}
+.customer-order-actions{display:flex;flex-wrap:wrap;gap:8px}
+.customer-order-actions .btn{min-height:37px}
+.order-toast{border:1px solid #9bd5ad;background:#eaf8ee;color:#115c39;padding:13px 16px;border-radius:11px;font-weight:700;margin-bottom:14px}
+.store-order-qr{display:block;background:#fff;border:1px solid #d8e6dd;border-radius:12px;padding:10px;width:min(100%,230px);height:auto;aspect-ratio:1;object-fit:contain;margin:14px auto}
+.manager-orders-only>.form-grid{margin-bottom:18px}
+.manager-orders-only .panel{min-width:0}
+.cashier-mode .layout{display:block}
+.cashier-mode .nav{display:flex;gap:8px;position:sticky;top:62px;z-index:3;width:100%;min-height:0;max-width:660px;margin:0 auto;padding:8px 14px;background:#f4f8f5;border:0;box-shadow:none;flex-direction:row}
+.cashier-mode .nav .nav-btn{flex:1;min-width:0;max-width:50%;font-size:13px;display:flex;align-items:center;justify-content:center;gap:5px}
+.cashier-mode .nav .nav-btn:not([data-page="transaction"]):not([data-page="orders"]){display:none}
+.cashier-mode #page-orders{display:block}
+.cashier-mode #page-orders[hidden]{display:none}
+.cashier-mode .manager-orders-only{display:none}
+.cashier-mode #page-orders .order-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cashier-mode .content{max-width:660px;margin:0 auto;padding:18px 12px 60px}
+.cashier-mode .customer-order-values{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cashier-mode .order-filters{gap:5px}
+.cashier-mode .order-filters button{padding:9px 11px}
+@media(max-width:640px){
+ .orders-page .order-kpis{gap:7px}
+ .orders-page .order-kpis .panel{padding:12px}
+ .orders-page .order-kpis strong{font-size:20px}
+ .orders-page .customer-order-values{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .orders-page .page-top{flex-wrap:wrap;gap:10px}
+ .customer-order{padding:13px}
+ .customer-order-actions .btn{flex:1}
+ .order-filters{gap:5px}
+ .order-filters button{padding:7px 10px}
+}
