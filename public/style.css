@@ -120,3 +120,14 @@ footer{font-size:11px;color:#9baaa4;margin-top:40px;text-align:center;padding:12
  .cashier-mode #page-transaction .page-top .btn{display:none}
  .cashier-mode #page-transaction .field-pair{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
 }
+
+
+/* Manager launch preparation: backup-first destructive action. */
+.btn.danger{background:#9b322f;color:#fff;box-shadow:0 4px 10px #9b322f22}
+.btn.danger:hover{background:#7d2423}
+.launch-steps{display:flex;flex-direction:column;gap:13px}
+.launch-steps .verify{background:#fff8f4;border-color:#f1dacb}
+.launch-steps .verify strong{color:#86422c}
+.launch-steps .verify input{accent-color:#9b322f}
+#launchArchiveStatus{margin:15px 0 0;overflow-wrap:anywhere}
+#launchBackupStatus{margin:0 0 5px}
