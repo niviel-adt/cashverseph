@@ -61,11 +61,12 @@ function showApp() {
   byId('appScreen').hidden=false;
 }
 function showPage(page) {
-  if(currentRole==='cashier')page='transaction';
+  if(currentRole==='cashier' && !['transaction','orders'].includes(page))page='transaction';
   clearNotice();
   document.querySelectorAll('.page').forEach(el=>{el.hidden=el.id!=='page-'+page;});
   document.querySelectorAll('.nav-btn').forEach(el=>el.classList.toggle('active',el.dataset.page===page));
   if(page==='transaction') updateQuote();
+  if(page==='orders')window.cashverseOrders?.refresh();
   if(page==='launch' && currentRole==='manager') refreshLaunchSummary().catch(e=>notify(e.message,true));
   window.scrollTo({top:0,behavior:'smooth'});
 }
@@ -234,7 +235,7 @@ async function downloadLaunchBackup(){
 }
 
 async function loadAll(){
-  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates(),refreshCashiers(),refreshSettings(),refreshLaunchSummary()]);
+  await Promise.all([refreshDashboard(),refreshHistory(),refreshReport(),refreshAdjustments(),refreshRates(),refreshCashiers(),refreshSettings(),refreshLaunchSummary(),window.cashverseOrders?.refresh(),window.cashverseOrders?.refreshManager()]);
 }
 async function startSession(me){
   currentRole=me.role;
